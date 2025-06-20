@@ -57,7 +57,7 @@ CREATE TABLE active_missile (
     callsign TEXT NOT NULL,
     platform_type_id INT REFERENCES platform_type(id),
     launch_installation_id INT REFERENCES installation(id),
-    target_geom GEOGRAPHY(Point,4326),
+  target_geom GEOGRAPHY(Point,4326),
     target_altitude_m NUMERIC DEFAULT 0,
     launch_ts TIMESTAMP DEFAULT NOW(),
     current_geom GEOGRAPHY(Point,4326),

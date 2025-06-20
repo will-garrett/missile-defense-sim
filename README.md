@@ -395,7 +395,7 @@ The system now supports dynamic installation management:
    git clone <repository-url>
    cd missile-defense-sim
    ```
-
+   
 2. **Start the system**
    ```bash
    docker-compose up -d

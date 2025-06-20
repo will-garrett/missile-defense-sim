@@ -242,9 +242,20 @@ class SimulationEngine:
             if not platform:
                 raise ValueError(f"Platform {platform_nickname} not found")
         
-        # Calculate initial velocity (simplified)
-        initial_speed = min(platform['max_speed_mps'], 1000)  # m/s
-        initial_velocity = Vector3D(0, 0, initial_speed)
+        # Calculate initial velocity toward target
+        initial_speed = min(float(platform['max_speed_mps']), 1000.0)  # m/s
+        
+        # Calculate direction to target
+        target_pos = Vector3D(float(target_lon), float(target_lat), float(target_alt))
+        launch_pos = Vector3D(float(launch_lon), float(launch_lat), float(launch_alt))
+        direction_to_target = target_pos - launch_pos
+        
+        # Normalize and apply initial speed
+        if direction_to_target.magnitude() > 0:
+            initial_velocity = direction_to_target.normalize() * initial_speed
+        else:
+            # Fallback: upward velocity if target is at same position
+            initial_velocity = Vector3D(0, 0, initial_speed)
         
         # Create missile state
         missile = MissileState(
@@ -457,6 +468,19 @@ class SimulationEngine:
                 "timestamp": time.time(),
                 "missile_type": missile.missile_type
             })
+            
+            # Also broadcast via NATS for radar service
+            await self.nats_client.publish(
+                "missile.position",
+                json.dumps({
+                    "id": missile_id,
+                    "callsign": missile.callsign,
+                    "position": {"x": missile.position.x, "y": missile.position.y, "z": missile.position.z},
+                    "velocity": {"x": missile.velocity.x, "y": missile.velocity.y, "z": missile.velocity.z},
+                    "timestamp": time.time(),
+                    "missile_type": missile.missile_type
+                }).encode()
+            )
             
             MISSILE_UPDATES.inc()
     

@@ -282,4 +282,60 @@ scenarios:
       
       - name: check_defense_status
         weight: 1
+        endpoint: "GET /installations"
+
+  - name: hawaii_test
+    description: "Single missile attack from Chinese submarine NW of Kauai, detected by radar on Kauai's peak, intercepted by missile battery at Schofield Barracks protecting Honolulu"
+    duration_seconds: 300
+    ramp_up_seconds: 30
+    max_concurrent_users: 5
+    tasks:
+      - name: setup_hawaii_defense
+        weight: 1
+        endpoint: "POST /scenarios/setup"
+        data:
+          scenario_name: "hawaii_test"
+          installations:
+            - platform_type_nickname: "AN/TPY-2"
+              callsign: "RADAR_KAUAI_PEAK"
+              lat: 22.07
+              lon: -159.65
+              altitude_m: 1569
+              is_mobile: false
+              ammo_count: 0
+            - platform_type_nickname: "Aegis BMD SM-3"
+              callsign: "DEF_SCHOFIELD_BARRACKS"
+              lat: 21.49
+              lon: -158.06
+              altitude_m: 300
+              is_mobile: false
+              ammo_count: 16
+            - platform_type_nickname: "JL-2"
+              callsign: "ATK_CHINESE_SUB"
+              lat: 22.5
+              lon: -160.2
+              altitude_m: -200
+              is_mobile: true
+              ammo_count: 12
+      
+      - name: launch_submarine_missile
+        weight: 3
+        endpoint: "POST /launch"
+        data:
+          platform_nickname: "JL-2"
+          launch_callsign: "ATK_CHINESE_SUB"
+          launch_lat: 22.5
+          launch_lon: -160.2
+          launch_alt: -200
+          target_lat: 21.31
+          target_lon: -157.86
+          target_alt: 0
+          missile_type: "attack"
+      
+      - name: check_radar_detection
+        weight: 2
+        endpoint: "GET /installations"
+      
+      - name: check_missile_battery_status
+        weight: 2
         endpoint: "GET /installations" 
