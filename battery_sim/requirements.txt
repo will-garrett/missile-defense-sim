@@ -3,3 +3,5 @@ nats-py==2.6.0
 pyzmq
 prometheus-client==0.19.0
 python-dateutil
+fastapi==0.104.1
+uvicorn==0.24.0

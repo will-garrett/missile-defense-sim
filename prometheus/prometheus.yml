@@ -19,10 +19,10 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 5s
 
-  # API Launcher
-  - job_name: 'api_launcher'
+  # Attack Service
+  - job_name: 'attack_service'
     static_configs:
-      - targets: ['api_launcher:8000']
+      - targets: ['attack_service:8000']
     metrics_path: '/metrics'
     scrape_interval: 5s
 
@@ -44,13 +44,6 @@ scrape_configs:
   - job_name: 'battery_sim'
     static_configs:
       - targets: ['battery_sim:8000']
-    metrics_path: '/metrics'
-    scrape_interval: 5s
-
-  # Interceptor Simulation
-  - job_name: 'interceptor_sim'
-    static_configs:
-      - targets: ['interceptor_sim:8000']
     metrics_path: '/metrics'
     scrape_interval: 5s
 

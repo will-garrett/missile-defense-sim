@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status - Missile Defense Test Runner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .nav {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .nav a {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav a:hover {
+            background-color: #0056b3;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .status-card.running {
+            border-left-color: #28a745;
+        }
+        .status-card.completed {
+            border-left-color: #6c757d;
+        }
+        .status-card.error {
+            border-left-color: #dc3545;
+        }
+        .status-card h3 {
+            margin-top: 0;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric:last-child {
+            border-bottom: none;
+        }
+        .metric-label {
+            font-weight: bold;
+            color: #555;
+        }
+        .metric-value {
+            color: #007bff;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-running {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-completed {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .results-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        .results-section h4 {
+            margin-top: 0;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .stop-button {
+            width: 100%;
+            padding: 8px;
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+        .stop-button:hover {
+            background-color: #c82333;
+        }
+        .stop-button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .no-tests {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            padding: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Test Status</h1>
+        
+        <div class="nav">
+            <a href="/">🏠 Dashboard</a>
+            <a href="/scenarios">📋 Scenarios</a>
+            <a href="/docs">📖 API Docs</a>
+        </div>
+
+        <div class="status-grid" id="statusGrid">
+            <!-- Status cards will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                const statusGrid = document.getElementById('statusGrid');
+                
+                if (data.active_tests && data.active_tests.length > 0) {
+                    statusGrid.innerHTML = data.active_tests.map(test => `
+                        <div class="status-card ${test.status}">
+                            <h3>${test.scenario_name}</h3>
+                            <div class="metric">
+                                <span class="metric-label">Status:</span>
+                                <span class="metric-value">
+                                    <span class="status-badge status-${test.status}">${test.status}</span>
+                                </span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Started:</span>
+                                <span class="metric-value">${test.start_time ? new Date(test.start_time).toLocaleString() : 'N/A'}</span>
+                            </div>
+                            ${test.end_time ? `
+                            <div class="metric">
+                                <span class="metric-label">Ended:</span>
+                                <span class="metric-value">${new Date(test.end_time).toLocaleString()}</span>
+                            </div>
+                            ` : ''}
+                            ${test.results && Object.keys(test.results).length > 0 ? `
+                            <div class="results-section">
+                                <h4>Results</h4>
+                                <div class="metric">
+                                    <span class="metric-label">Total Requests:</span>
+                                    <span class="metric-value">${test.results.total_requests || 0}</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Success Rate:</span>
+                                    <span class="metric-value">${((test.results.success_rate || 0) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div class="metric">
+                                    <span class="metric-label">Avg Response Time:</span>
+                                    <span class="metric-value">${(test.results.avg_response_time || 0).toFixed(3)}s</span>
+                                </div>
+                            </div>
+                            ` : ''}
+                            ${test.status === 'running' ? `
+                            <button class="stop-button" onclick="stopScenario('${test.scenario_name}')">
+                                ⏹️ Stop Test
+                            </button>
+                            ` : ''}
+                        </div>
+                    `).join('');
+                } else {
+                    statusGrid.innerHTML = '<div class="no-tests"><h3>No Active Tests</h3><p>No tests are currently running.</p></div>';
+                }
+            } catch (error) {
+                console.error('Error loading status:', error);
+                document.getElementById('statusGrid').innerHTML = '<div class="status-card error"><h3>Error</h3><p>Failed to load status information.</p></div>';
+            }
+        }
+
+        async function stopScenario(scenarioName) {
+            if (!confirm(`Are you sure you want to stop the ${scenarioName} scenario?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/stop/${scenarioName}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert(`Scenario ${scenarioName} is being stopped.`);
+                    loadStatus(); // Refresh the status
+                } else {
+                    const error = await response.text();
+                    alert(`Failed to stop scenario: ${error}`);
+                }
+            } catch (error) {
+                alert(`Error stopping scenario: ${error.message}`);
+            }
+        }
+
+        // Load status on page load and refresh every 5 seconds
+        loadStatus();
+        setInterval(loadStatus, 5000);
+    </script>
+</body>
+</html> 

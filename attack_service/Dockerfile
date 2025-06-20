@@ -1,4 +1,4 @@
-# NATS-subscriber for detections → correlates → issues battery intercept orders
+# Receives /launch, writes to PostGIS and emits first track point
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all application code
 COPY *.py .
 
-# Expose port
-EXPOSE 8000
+# Expose ports
+EXPOSE 8000 9000
 
-CMD ["python", "command_center.py"]
+# Run the attack service
+CMD ["python", "main.py"]

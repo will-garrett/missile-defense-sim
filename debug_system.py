@@ -13,12 +13,13 @@ def check_service_health():
     print("🔍 Checking service health...")
     
     services = [
-        ("simulation_service", "http://localhost:8001/metrics", "GET"),
-        ("api_launcher", "http://localhost:8003/metrics", "GET"),
-        ("command_center", "http://localhost:8005/metrics", "GET"),
-        ("radar_service", "http://localhost:8006/metrics", "GET"),
-        ("battery_sim", "http://localhost:8007/metrics", "GET"),
-        ("interceptor_sim", "http://localhost:8008/metrics", "GET"),
+        ("simulation_service", "http://localhost:8001/health", "GET"),
+        ("attack_service (metrics)", "http://localhost:8003/health", "GET"),
+        ("attack_service (REST)", "http://localhost:9000/health", "GET"),
+        ("command_center", "http://localhost:8005/health", "GET"),
+        ("radar_service", "http://localhost:8006/health", "GET"),
+        ("battery_sim", "http://localhost:8007/health", "GET"),
+        ("test_running", "http://localhost:8089/health", "GET"),
     ]
     
     healthy_services = []
@@ -104,27 +105,28 @@ def check_nats():
     except Exception as e:
         print(f"❌ Error checking NATS: {e}")
 
-def check_locust():
-    """Check Locust specifically"""
-    print("\n🦗 Checking Locust load testing...")
+def check_prometheus_metrics():
+    """Check Prometheus metrics endpoints"""
+    print("\n📊 Checking Prometheus metrics endpoints...")
     
-    try:
-        # Check if Locust UI is accessible
-        response = requests.get("http://localhost:8089/", timeout=5)
-        if response.status_code == 200:
-            print("✅ Locust UI is accessible")
-            
-            # Check if workers are connected
-            if "locust-worker" in response.text:
-                print("✅ Locust workers are connected")
+    metrics_services = [
+        ("simulation_service", "http://localhost:8001/metrics"),
+        ("attack_service", "http://localhost:8003/metrics"),
+        ("command_center", "http://localhost:8005/metrics"),
+        ("radar_service", "http://localhost:8006/metrics"),
+        ("battery_sim", "http://localhost:8007/metrics"),
+        ("test_running", "http://localhost:8089/metrics"),
+    ]
+    
+    for service_name, url in metrics_services:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                print(f"✅ {service_name}: Metrics available")
             else:
-                print("⚠️ Locust workers may not be connected")
-        else:
-            print(f"❌ Locust UI returned status code: {response.status_code}")
-            
-    except Exception as e:
-        print(f"❌ Locust UI not accessible: {e}")
-        print("💡 Try: docker-compose logs -f locust-master")
+                print(f"⚠️ {service_name}: Metrics returned HTTP {response.status_code}")
+        except Exception as e:
+            print(f"❌ {service_name}: Metrics not accessible - {e}")
 
 def main():
     print("🚀 Missile Defense System Debug")
@@ -140,8 +142,8 @@ def main():
     # Check application services
     healthy, failed = check_service_health()
     
-    # Check Locust specifically
-    check_locust()
+    # Check Prometheus metrics
+    check_prometheus_metrics()
     
     print(f"\n📊 Summary:")
     print(f"✅ Healthy services: {len(healthy)}")
@@ -154,17 +156,11 @@ def main():
         print("2. Restart services: docker-compose restart <service_name>")
         print("3. Rebuild services: docker-compose build <service_name>")
         print("4. Check resource usage: docker stats")
-        
-        if "locust-master" in failed:
-            print("\n🦗 Locust-specific troubleshooting:")
-            print("1. Check Locust logs: docker-compose logs -f locust-master")
-            print("2. Restart Locust: docker-compose restart locust-master locust-worker")
-            print("3. Rebuild Locust: docker-compose build locust-master locust-worker")
-            print("4. Check if port 8089 is available: netstat -an | grep 8089")
     else:
         print("\n🎉 All services are healthy!")
         print("You can now test the system with: python test_system.py")
-        print("Access Locust UI at: http://localhost:8089")
+        print("Access Prometheus UI at: http://localhost:8001/metrics")
+        print("Access test runner at: http://localhost:8089")
 
 if __name__ == "__main__":
     main() 

@@ -1,24 +1,27 @@
+"""
+Main entry point for the Battery Simulation Service
+Coordinates API endpoints, messaging, and battery logic
+"""
+import os
 import asyncio
+from prometheus_client import start_http_server
+import uvicorn
+import asyncpg
+import nats
+from nats.aio.client import Client as NATS
 import json
 import math
-import os
 import time
 import uuid
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-import asyncpg
-import nats
-from nats.aio.client import Client as NATS
-from prometheus_client import start_http_server, Counter, Gauge, Histogram
+from api import BatterySimAPI
+from messaging import BatteryMessagingService
+from battery_logic import BatteryLogic
 
 # Prometheus metrics
 start_http_server(8000)
-ENGAGEMENTS = Counter("battery_engagements_total", "Total battery engagements")
-LAUNCHES = Counter("battery_launches_total", "Total missile launches")
-AMMO_USED = Counter("ammo_used_total", "Total ammunition used")
-BATTERY_STATUS = Gauge("battery_status", "Battery operational status", ["status"])
-ENGAGEMENT_TIME = Histogram("engagement_time_seconds", "Time from order to launch")
 
 @dataclass
 class BatteryCapability:
@@ -110,7 +113,7 @@ class BatterySim:
     async def handle_engagement_order(self, msg):
         """Handle engagement order from command center"""
         try:
-            data = json.loads(msg.data.decode())
+            data = msg.data.decode()
             
             if data['type'] != 'engagement_order':
                 return
@@ -190,7 +193,6 @@ class BatterySim:
         
         # Change status to preparing
         self.status = "preparing"
-        BATTERY_STATUS.labels(status=self.status).set(1)
         
         # Simulate preparation time (5 seconds)
         await asyncio.sleep(5)
@@ -216,11 +218,9 @@ class BatterySim:
         
         # Change status to launching
         self.status = "launching"
-        BATTERY_STATUS.labels(status=self.status).set(1)
         
         # Decrement ammo
         self.ammo_count -= 1
-        AMMO_USED.inc()
         
         # Update database
         async with self.db_pool.acquire() as conn:
@@ -287,16 +287,11 @@ class BatterySim:
         
         # Update timing
         self.last_launch_time = time.time()
-        ENGAGEMENT_TIME.observe(time.time() - order.timestamp)
-        
-        LAUNCHES.inc()
-        ENGAGEMENTS.inc()
-        
-        print(f"Launched defense missile {missile_callsign} at target {order.target_missile_id}")
         
         # Change status to reloading
         self.status = "reloading"
-        BATTERY_STATUS.labels(status=self.status).set(1)
+        
+        print(f"Launched defense missile {missile_callsign} at target {order.target_missile_id}")
         
         return True
     
@@ -330,7 +325,6 @@ class BatterySim:
             # Check if reload time has passed
             if current_time - self.last_launch_time >= self.battery_capability.reload_time_sec:
                 self.status = "ready"
-                BATTERY_STATUS.labels(status=self.status).set(1)
                 print(f"Battery {self.callsign} ready for next engagement")
         
         # Update database status
@@ -385,20 +379,91 @@ class BatterySim:
                 print(f"Error in battery operation: {e}")
                 await asyncio.sleep(1.0)
 
+async def create_db_pool_with_retry(dsn, max_retries=30, delay=2):
+    for attempt in range(max_retries):
+        try:
+            pool = await asyncpg.create_pool(dsn=dsn)
+            print(f"Database connection established on attempt {attempt + 1}")
+            return pool
+        except Exception as e:
+            print(f"Database connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+            else:
+                raise
+    raise Exception("Failed to connect to database after all retries")
+
 async def main():
-    """Main entry point"""
-    battery = BatterySim()
-    await battery.initialize()
-    
-    try:
-        await battery.run_battery()
-    except KeyboardInterrupt:
-        print(f"Battery {battery.callsign} shutting down...")
-    finally:
-        if battery.db_pool:
-            await battery.db_pool.close()
-        if battery.nats_client:
-            await battery.nats_client.close()
+    callsign = os.getenv("CALL_SIGN", "DEF_AEG_01")
+    db_dsn = os.getenv("DB_DSN")
+    nats_url = os.getenv("NATS_URL", "nats://nats:4222")
+    if not db_dsn:
+        raise ValueError("DB_DSN environment variable is required")
+
+    db_pool = await create_db_pool_with_retry(db_dsn)
+    nats_client = NATS()
+    await nats_client.connect(nats_url)
+    print("Connected to NATS")
+
+    messaging = BatteryMessagingService(callsign, db_pool, nats_client)
+    battery_capability, ammo_count = await messaging.load_battery_capabilities()
+    logic = BatteryLogic(callsign, battery_capability, ammo_count)
+
+    # Engagement order handler
+    async def engagement_order_handler(msg):
+        data = msg.data.decode()
+        try:
+            order_data = json.loads(data)
+            if order_data.get('type') != 'engagement_order':
+                return
+            order = logic.EngagementOrder(
+                target_missile_id=order_data['target_missile_id'],
+                intercept_point=order_data['intercept_point'],
+                intercept_altitude=order_data['intercept_altitude'],
+                probability_of_success=order_data['probability_of_success'],
+                timestamp=order_data['timestamp']
+            )
+            logic.pending_engagements.append(order)
+            print(f"Received engagement order for missile {order.target_missile_id}")
+        except Exception as e:
+            print(f"Error handling engagement order: {e}")
+
+    await messaging.subscribe_engagement_orders(engagement_order_handler)
+
+    # API
+    api_service = BatterySimAPI(logic)
+    app = api_service.get_app()
+
+    # Background battery operation loop
+    async def battery_loop():
+        print(f"Battery {callsign} operational")
+        while True:
+            try:
+                # Update status, process engagements, etc.
+                # (You may want to call logic methods or messaging as needed)
+                await asyncio.sleep(1.0)
+            except Exception as e:
+                print(f"Error in battery operation: {e}")
+                await asyncio.sleep(1.0)
+
+    @app.on_event("startup")
+    async def startup():
+        asyncio.create_task(battery_loop())
+
+    @app.on_event("shutdown")
+    async def shutdown():
+        print(f"Battery {callsign} shutting down...")
+        await nats_client.close()
+        await db_pool.close()
+
+    config = uvicorn.Config(
+        app=app,
+        host="0.0.0.0",
+        port=8007,
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
 
 if __name__ == "__main__":
     asyncio.run(main())

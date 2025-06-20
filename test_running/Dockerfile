@@ -1,4 +1,3 @@
-# NATS-subscriber for detections → correlates → issues battery intercept orders
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -13,10 +12,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all application code
+# Copy application files
 COPY *.py .
+COPY *.yml .
+COPY templates/ templates/
+COPY static/ static/
 
 # Expose port
 EXPOSE 8000
 
-CMD ["python", "command_center.py"]
+# Run the application
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"] 

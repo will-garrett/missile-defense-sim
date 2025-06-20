@@ -109,7 +109,7 @@ def main():
         print("5. Check if port 8089 is available: netstat -an | grep 8089")
         
         print(f"\n💡 Manual Locust start:")
-        print("docker-compose exec locust-master locust -f locustfile.py --host=http://api_launcher:9000")
+        print("docker-compose exec locust-master locust -f locustfile.py --host=http://attack_service:9000")
     
     if api_ok and services_ok and ui_ok:
         print(f"\n🎉 Locust is ready!")

@@ -38,11 +38,10 @@ def test_metrics():
     
     services = [
         ("simulation_service", "http://localhost:8001/metrics"),
-        ("api_launcher", "http://localhost:8003/metrics"),
+        ("attack_service", "http://localhost:8003/metrics"),
         ("command_center", "http://localhost:8005/metrics"),
         ("radar_service", "http://localhost:8006/metrics"),
         ("battery_sim", "http://localhost:8007/metrics"),
-        ("interceptor_sim", "http://localhost:8008/metrics"),
     ]
     
     for service_name, url in services:
@@ -75,7 +74,6 @@ def main():
         print("  - Radar detections")
         print("  - Command center intercept orders")
         print("  - Battery firing")
-        print("  - Interceptor detonations")
         
         print(f"\n📊 Check metrics at:")
         print("  - Prometheus: http://localhost:9090")

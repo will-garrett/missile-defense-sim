@@ -31,9 +31,9 @@ graph TB
     
     %% Core Simulation Services
     subgraph "Core Simulation Services"
-        SS[simulation_service<br/>Physics Engine<br/>Port: 8001<br/>Function: Central coordination<br/>Physics calculations<br/>Metrics: /metrics]
-        AL[api_launcher<br/>REST API Server<br/>Port: 9000<br/>Function: Launch missiles<br/>Manage installations<br/>Metrics: /metrics:8003]
-        CC[command_center<br/>Threat Assessment<br/>Port: 8005<br/>Function: C2 coordination<br/>Battery selection<br/>Metrics: /metrics]
+        SS[simulation_service<br/>Physics Engine<br/>Port: 8001<br/>Function: Missile physics<br/>Trajectory calculation<br/>Metrics: /metrics]
+        AL[attack_service<br/>REST API Server<br/>Port: 9000<br/>Function: Launch missiles<br/>Manage installations<br/>Metrics: /metrics:8003]
+        CC[command_center<br/>Command & Control<br/>Port: 8005<br/>Function: Threat assessment<br/>Battery coordination<br/>Metrics: /metrics]
     end
     
     %% Detection Systems
@@ -44,7 +44,6 @@ graph TB
     %% Counter-Defense Systems
     subgraph "Counter-Defense Systems"
         BS[battery_sim<br/>Missile Battery<br/>Call Sign: DEF_AEG_01<br/>Function: Interceptor firing<br/>Ammo management<br/>Metrics: /metrics:8007]
-        IS[interceptor_sim<br/>Interceptor Simulator<br/>Function: Intercept simulation<br/>Metrics: /metrics:8008]
     end
     
     %% Infrastructure
@@ -107,7 +106,6 @@ graph TB
     CC -->|HTTP<br/>Prometheus metrics| PROM
     RS -->|HTTP<br/>Prometheus metrics| PROM
     BS -->|HTTP<br/>Prometheus metrics| PROM
-    IS -->|HTTP<br/>Prometheus metrics| PROM
     
     %% Load Testing
     LM -->|HTTP<br/>test requests| AL
@@ -129,7 +127,7 @@ graph TB
     
     class SS,AL,CC coreService
     class RS detection
-    class BS,IS defense
+    class BS defense
     class NATS,ZMQ,PG,PROM,GRAF,PGA infrastructure
     class UI,API,CLI external
     class LM,LW1,LW2,LW3 loadtest
@@ -140,7 +138,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Client
-    participant API as api_launcher
+    participant API as attack_service
     participant SS as simulation_service
     participant RS as radar_service
     participant CC as command_center
@@ -202,7 +200,7 @@ sequenceDiagram
    - Handles atmospheric effects, gravity, and fuel consumption
    - Broadcasts position updates via ZMQ and NATS
 
-2. **API Launcher** (`api_launcher/`)
+2. **Attack Service** (`attack_service/`)
    - RESTful API for launching missiles and managing installations
    - Platform type management and installation configuration
    - Real-time status monitoring and metrics

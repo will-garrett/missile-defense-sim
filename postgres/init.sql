@@ -245,45 +245,45 @@ INSERT INTO platform_type (nickname, category, description, detection_range_m, s
 ('DSP Satellite', 'detection_system', 'US Defense Support Program Satellite', 5000000, 360, 35786000);
 
 -- Counter-Defense Systems - United States
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('Aegis BMD SM-3', 'counter_defense', 'US Navy Standard Missile 3', 3500, 2500000, 150000, 200, 30, 85, 32, 15),
-('THAAD System', 'counter_defense', 'US Army Terminal High Altitude Area Defense', 2800, 200000, 150000, 150, 45, 90, 8, 20),
-('Patriot PAC-3 MSE', 'counter_defense', 'US Army Patriot Advanced Capability', 1700, 100000, 80000, 100, 20, 95, 16, 10),
-('GMD System', 'counter_defense', 'US Ground-Based Midcourse Defense', 8000, 8000000, 2000000, 500, 300, 75, 44, 120),
-('Aegis BMD SM-6', 'counter_defense', 'US Navy Standard Missile 6', 3400, 2400000, 120000, 180, 35, 88, 24, 18);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('Aegis BMD SM-3', 'counter_defense', 'US Navy Standard Missile 3', 3500, 2500000, 150000, 200, 30, 85),
+('THAAD System', 'counter_defense', 'US Army Terminal High Altitude Area Defense', 2800, 200000, 150000, 150, 45, 90),
+('Patriot PAC-3 MSE', 'counter_defense', 'US Army Patriot Advanced Capability', 1700, 100000, 80000, 100, 20, 95),
+('GMD System', 'counter_defense', 'US Ground-Based Midcourse Defense', 8000, 8000000, 2000000, 500, 300, 75),
+('Aegis BMD SM-6', 'counter_defense', 'US Navy Standard Missile 6', 3400, 2400000, 120000, 180, 35, 88);
 
 -- Counter-Defense Systems - Russia
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('S-400 Triumf', 'counter_defense', 'Russian Air Defense System', 4800, 400000, 30000, 120, 25, 92, 8, 12),
-('S-500 Prometheus', 'counter_defense', 'Russian Strategic Air Defense System', 7000, 600000, 200000, 300, 60, 85, 4, 30),
-('A-135 Amur', 'counter_defense', 'Russian Anti-Ballistic Missile System', 10000, 350000, 800000, 800, 120, 80, 68, 60),
-('S-300V4', 'counter_defense', 'Russian Army Air Defense System', 2800, 400000, 35000, 100, 30, 90, 12, 15);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('S-400 Triumf', 'counter_defense', 'Russian Air Defense System', 4800, 400000, 30000, 120, 25, 92),
+('S-500 Prometheus', 'counter_defense', 'Russian Strategic Air Defense System', 7000, 600000, 200000, 300, 60, 85),
+('A-135 Amur', 'counter_defense', 'Russian Anti-Ballistic Missile System', 10000, 350000, 800000, 800, 120, 80),
+('S-300V4', 'counter_defense', 'Russian Army Air Defense System', 2800, 400000, 35000, 100, 30, 90);
 
 -- Counter-Defense Systems - China
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('HQ-9B', 'counter_defense', 'Chinese Air Defense System', 4200, 300000, 27000, 110, 28, 91, 8, 14),
-('HQ-19', 'counter_defense', 'Chinese Anti-Ballistic Missile System', 8000, 3000000, 1000000, 400, 90, 82, 12, 45),
-('HQ-26', 'counter_defense', 'Chinese Naval Air Defense System', 3600, 400000, 30000, 120, 32, 89, 16, 16),
-('HQ-29', 'counter_defense', 'Chinese Strategic Air Defense System', 6000, 500000, 150000, 250, 50, 87, 6, 25);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('HQ-9B', 'counter_defense', 'Chinese Air Defense System', 4200, 300000, 27000, 110, 28, 91),
+('HQ-19', 'counter_defense', 'Chinese Anti-Ballistic Missile System', 8000, 3000000, 1000000, 400, 90, 82),
+('HQ-26', 'counter_defense', 'Chinese Naval Air Defense System', 3600, 400000, 30000, 120, 32, 89),
+('HQ-29', 'counter_defense', 'Chinese Strategic Air Defense System', 6000, 500000, 150000, 250, 50, 87);
 
 -- Counter-Defense Systems - NATO Allies
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('Aster 30', 'counter_defense', 'European Air Defense Missile', 1400, 120000, 20000, 80, 15, 96, 32, 8),
-('MEADS', 'counter_defense', 'US/German/Italian Air Defense System', 2400, 200000, 25000, 100, 22, 93, 12, 11),
-('NASAMS', 'counter_defense', 'Norwegian Advanced Surface-to-Air Missile', 1000, 25000, 14000, 60, 12, 97, 24, 6),
-('IRIS-T SLM', 'counter_defense', 'German Air Defense System', 3000, 40000, 20000, 70, 18, 94, 16, 9);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('Aster 30', 'counter_defense', 'European Air Defense Missile', 1400, 120000, 20000, 80, 15, 96),
+('MEADS', 'counter_defense', 'US/German/Italian Air Defense System', 2400, 200000, 25000, 100, 22, 93),
+('NASAMS', 'counter_defense', 'Norwegian Advanced Surface-to-Air Missile', 1000, 25000, 14000, 60, 12, 97),
+('IRIS-T SLM', 'counter_defense', 'German Air Defense System', 3000, 40000, 20000, 70, 18, 94);
 
 -- Counter-Defense Systems - Israel
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('Iron Dome', 'counter_defense', 'Israeli Short-Range Air Defense', 300, 70000, 10000, 50, 8, 90, 20, 4),
-('David''s Sling', 'counter_defense', 'Israeli Medium-Range Air Defense', 2400, 300000, 15000, 80, 20, 92, 12, 10),
-('Arrow 3', 'counter_defense', 'Israeli Exo-Atmospheric Interceptor', 9000, 2400000, 100000, 300, 120, 85, 6, 60);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('Iron Dome', 'counter_defense', 'Israeli Short-Range Air Defense', 300, 70000, 10000, 50, 8, 90),
+('David''s Sling', 'counter_defense', 'Israeli Medium-Range Air Defense', 2400, 300000, 15000, 80, 20, 92),
+('Arrow 3', 'counter_defense', 'Israeli Exo-Atmospheric Interceptor', 9000, 2400000, 100000, 300, 120, 85);
 
 -- Counter-Defense Systems - India
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec) VALUES
-('Akash', 'counter_defense', 'Indian Medium-Range Air Defense', 850, 30000, 18000, 60, 15, 88, 16, 8),
-('Barak 8', 'counter_defense', 'Indian-Israeli Air Defense System', 2000, 100000, 16000, 70, 25, 90, 8, 12),
-('Prithvi Air Defense', 'counter_defense', 'Indian Exo-Atmospheric Interceptor', 5000, 2000000, 80000, 200, 90, 80, 4, 45);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
+('Akash', 'counter_defense', 'Indian Medium-Range Air Defense', 850, 30000, 18000, 60, 15, 88),
+('Barak 8', 'counter_defense', 'Indian-Israeli Air Defense System', 2000, 100000, 16000, 70, 25, 90),
+('Prithvi Air Defense', 'counter_defense', 'Indian Exo-Atmospheric Interceptor', 5000, 2000000, 80000, 200, 90, 80);
 
 -- Simulation Configuration
 INSERT INTO simulation_config (config_key, config_value, description) VALUES

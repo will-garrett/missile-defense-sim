@@ -44,8 +44,8 @@ services:
     environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
     ports: [ "8001:8000" ]
 
-  api_launcher:
-    build: ./api_launcher
+  attack_service:
+    build: ./attack_service
     environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
     depends_on: 
       postgres:
@@ -81,7 +81,7 @@ services:
       simulation_service:
         condition: service_started
     environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
-    ports: [ "8006:8000" ]
+    ports: [ "8006:8006" ]
 
 # Counter-Defense Systems
   battery_sim:
@@ -98,49 +98,21 @@ services:
     environment:
       - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
       - CALL_SIGN=${BATTERY_CALL_SIGN:-DEF_AEG_01}
-    ports: [ "8007:8000" ]
+    ports: [ "8007:8007" ]
 
-  interceptor_sim:
-    build: ./interceptor_sim
-    depends_on: 
-      nats:
+# Test Running Service
+  test_running:
+    build: ./test_running
+    depends_on:
+      attack_service:
         condition: service_started
       simulation_service:
         condition: service_started
-    ports: [ "8008:8000" ]
-
-# Load‑testing (master / workers pattern)
-  locust-master:
-    build: ./locust
-    working_dir: /mnt/locust
-    volumes:
-      - ./locust:/mnt/locust
-    environment:
-      - LOCUST_HOST=http://api_launcher:9000
-      - LOCUST_MODE=master
-      - LOCUST_WEB_HOST=0.0.0.0
-      - LOCUST_WEB_PORT=8089
-    depends_on:
-      api_launcher:
-        condition: service_started
     ports:
-      - "8089:8089"          # Web UI
-
-  locust-worker:
-    build: ./locust
-    working_dir: /mnt/locust
-    volumes:
-      - ./locust:/mnt/locust
+      - "8089:8000"   # Web UI and API
     environment:
-      - LOCUST_HOST=http://api_launcher:9000
-      - LOCUST_MODE=worker
-      - LOCUST_MASTER_HOST=locust-master
-      - LOCUST_MASTER_PORT=5557
-    depends_on:
-      locust-master:
-        condition: service_started
-    deploy:
-      replicas: 3
+      - SIMULATION_SERVICE_URL=http://simulation_service:8000
+      - ATTACK_SERVICE_URL=http://attack_service:9000
 
   pgadmin:
     image: dpage/pgadmin4:latest
