@@ -225,8 +225,13 @@ async def run_scenario(scenario_name: str, background_tasks: BackgroundTasks):
     if scenario_name not in test_runner.scenarios:
         raise HTTPException(status_code=404, detail="Scenario not found")
     
+    # Check if scenario is already running (not completed)
     if scenario_name in test_runner.active_tests:
-        raise HTTPException(status_code=400, detail="Scenario already running")
+        existing_test = test_runner.active_tests[scenario_name]
+        if existing_test.status in ["starting", "running", "stopping"]:
+            raise HTTPException(status_code=400, detail="Scenario already running")
+        # If completed, remove the old test run to allow re-running
+        del test_runner.active_tests[scenario_name]
     
     test_run = TestRun(scenario_name=scenario_name, status="starting")
     test_runner.active_tests[scenario_name] = test_run
