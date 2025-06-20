@@ -13,12 +13,12 @@ def check_service_health():
     print("🔍 Checking service health...")
     
     services = [
-        ("api_launcher", "http://localhost:9000/launch", "POST"),
-        ("track_sim", "http://localhost:8004/metrics", "GET"),
+        ("simulation_service", "http://localhost:8001/metrics", "GET"),
+        ("api_launcher", "http://localhost:8003/metrics", "GET"),
         ("command_center", "http://localhost:8005/metrics", "GET"),
-        ("battery_sim", "http://localhost:8006/metrics", "GET"),
-        ("interceptor_sim", "http://localhost:8007/metrics", "GET"),
-        ("locust-master", "http://localhost:8089/", "GET"),
+        ("radar_service", "http://localhost:8006/metrics", "GET"),
+        ("battery_sim", "http://localhost:8007/metrics", "GET"),
+        ("interceptor_sim", "http://localhost:8008/metrics", "GET"),
     ]
     
     healthy_services = []

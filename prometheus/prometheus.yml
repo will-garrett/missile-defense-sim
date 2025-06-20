@@ -1,31 +1,59 @@
 global:
-  scrape_interval: 5s
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
 
 scrape_configs:
-  # --- Missile attack chain ------------------------------
-  - job_name: api_launcher
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Simulation Service
+  - job_name: 'simulation_service'
+    static_configs:
+      - targets: ['simulation_service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # API Launcher
+  - job_name: 'api_launcher'
     static_configs:
       - targets: ['api_launcher:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
 
-  - job_name: track_sim
-    static_configs:
-      - targets: ['track_sim:8000']
-
-  # --- Defender chain ------------------------------------
-  - job_name: command_center
+  # Command Center
+  - job_name: 'command_center'
     static_configs:
       - targets: ['command_center:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
 
-  - job_name: battery_sim
+  # Radar Service (manages multiple installations)
+  - job_name: 'radar_service'
+    static_configs:
+      - targets: ['radar_service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # Battery Simulation
+  - job_name: 'battery_sim'
     static_configs:
       - targets: ['battery_sim:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
 
-  - job_name: interceptor_sim
+  # Interceptor Simulation
+  - job_name: 'interceptor_sim'
     static_configs:
       - targets: ['interceptor_sim:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
 
-  # Radar replicas discovered via DNS
-  - job_name: radar_site
-    dns_sd_configs:
-      - names: ['radar_site']
-        port: 8000
+  - job_name: 'locust-master'
+    static_configs:
+      - targets: ['locust-master:8089']

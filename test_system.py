@@ -37,11 +37,12 @@ def test_metrics():
     print("\nTesting metrics endpoints...")
     
     services = [
+        ("simulation_service", "http://localhost:8001/metrics"),
         ("api_launcher", "http://localhost:8003/metrics"),
-        ("track_sim", "http://localhost:8004/metrics"),
         ("command_center", "http://localhost:8005/metrics"),
-        ("battery_sim", "http://localhost:8006/metrics"),
-        ("interceptor_sim", "http://localhost:8007/metrics"),
+        ("radar_service", "http://localhost:8006/metrics"),
+        ("battery_sim", "http://localhost:8007/metrics"),
+        ("interceptor_sim", "http://localhost:8008/metrics"),
     ]
     
     for service_name, url in services:

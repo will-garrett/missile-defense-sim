@@ -33,7 +33,17 @@ services:
     volumes:
       - ./_data/grafana:/var/lib/grafana
 
-# Applications
+# Core Simulation Services
+  simulation_service:
+    build: ./simulation_service
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
+    ports: [ "8001:8000" ]
+
   api_launcher:
     build: ./api_launcher
     environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
@@ -42,35 +52,11 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
+      simulation_service:
+        condition: service_started
     ports:
-      - "9000:9000"   # REST
+      - "9000:9000"   # REST API
       - "8003:8000"   # /metrics
-
-  track_sim:
-    build: ./track_sim
-    depends_on: 
-      postgres:
-        condition: service_healthy
-      api_launcher:
-        condition: service_started
-    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
-    ports: [ "5556:5556", "8004:8000" ]
-
-  radar_site:
-    build: ./radar_site
-    depends_on: 
-      postgres:
-        condition: service_healthy
-      track_sim:
-        condition: service_started
-      nats:
-        condition: service_started
-    environment:
-      - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
-      - CALL_SIGN=${RADAR_CALL_SIGN:-RAD_VBG}
-    deploy:                        # spin up 3 radar replicas
-      replicas: 3
-    # ports: [ "0" ]                 # internal only; metrics scraped by service-discovery
 
   command_center:
     build: ./command_center
@@ -79,9 +65,25 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
+      simulation_service:
+        condition: service_started
     environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
     ports: [ "8005:8000" ]
 
+# Detection Systems
+  radar_service:
+    build: ./radar_service
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      simulation_service:
+        condition: service_started
+    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
+    ports: [ "8006:8000" ]
+
+# Counter-Defense Systems
   battery_sim:
     build: ./battery_sim
     depends_on: 
@@ -89,21 +91,27 @@ services:
         condition: service_healthy
       nats:
         condition: service_started
+      simulation_service:
+        condition: service_started
+      command_center:
+        condition: service_started
     environment:
       - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
-      - CALL_SIGN=${BATTERY_CALL_SIGN:-BAT_LA}
-    ports: [ "8006:8000" ]
+      - CALL_SIGN=${BATTERY_CALL_SIGN:-DEF_AEG_01}
+    ports: [ "8007:8000" ]
 
   interceptor_sim:
     build: ./interceptor_sim
     depends_on: 
       nats:
         condition: service_started
-    ports: [ "8007:8000" ]
+      simulation_service:
+        condition: service_started
+    ports: [ "8008:8000" ]
 
 # Load‑testing (master / workers pattern)
   locust-master:
-    build: ./locust          # same custom image with extra deps
+    build: ./locust
     working_dir: /mnt/locust
     volumes:
       - ./locust:/mnt/locust
@@ -119,7 +127,7 @@ services:
       - "8089:8089"          # Web UI
 
   locust-worker:
-    build: ./locust          # reuse the same Dockerfile
+    build: ./locust
     working_dir: /mnt/locust
     volumes:
       - ./locust:/mnt/locust
@@ -132,7 +140,7 @@ services:
       locust-master:
         condition: service_started
     deploy:
-      replicas: 3            # spin up 3 workers (adjust as needed)
+      replicas: 3
 
   pgadmin:
     image: dpage/pgadmin4:latest

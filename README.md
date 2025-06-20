@@ -2,11 +2,23 @@
 
 Still working out the bugs of this portfolio project, still very much a WIP
 
-# Missile Defense Simulator
+# Missile Defense Simulation System v2.0
 
-A distributed missile defense simulation system using NATS, ZeroMQ, PostgreSQL with PostGIS, and Prometheus/Grafana for monitoring.
+A comprehensive, physics-based missile defense simulation system that models realistic missile attacks, detection, and counter-defense coordination using distributed microservices.
 
-## System Architecture
+## 🎯 Overview
+
+This system simulates a complete missile defense scenario including:
+
+- **Attack Platforms**: Various missile launch platforms (SCUD-V, submarines, etc.)
+- **Detection Systems**: Radar installations, satellites, and tracking systems
+- **Counter-Defense**: Anti-ballistic missile batteries and interceptors
+- **Command & Control**: Centralized threat assessment and engagement coordination
+- **Realistic Physics**: Atmospheric effects, gravity, fuel consumption, and trajectory calculations
+
+## 🏗️ Architecture
+
+### System Architecture Diagram
 
 ```mermaid
 graph TB
@@ -14,32 +26,32 @@ graph TB
     subgraph "External Interfaces"
         UI[Web Browser<br/>User Interface]
         API[API Client<br/>REST Requests]
+        CLI[Command Line<br/>Testing Tools]
     end
     
-    %% Core Services
-    subgraph "Core Services"
-        AL[api_launcher<br/>REST API Server<br/>Port: 9000<br/>Function: Launch missiles<br/>Metrics: /metrics:8003]
-        TS[track_sim<br/>Trajectory Simulator<br/>Port: 5556/5557<br/>Function: Physics simulation<br/>Metrics: /metrics:8004]
+    %% Core Simulation Services
+    subgraph "Core Simulation Services"
+        SS[simulation_service<br/>Physics Engine<br/>Port: 8001<br/>Function: Central coordination<br/>Physics calculations<br/>Metrics: /metrics]
+        AL[api_launcher<br/>REST API Server<br/>Port: 9000<br/>Function: Launch missiles<br/>Manage installations<br/>Metrics: /metrics:8003]
+        CC[command_center<br/>Threat Assessment<br/>Port: 8005<br/>Function: C2 coordination<br/>Battery selection<br/>Metrics: /metrics]
     end
     
-    %% Detection System
-    subgraph "Detection System"
-        RS1[radar_site-1<br/>Radar Detection<br/>Call Sign: RAD_VBG<br/>Function: Missile detection<br/>Metrics: /metrics:8000]
-        RS2[radar_site-2<br/>Radar Detection<br/>Call Sign: RAD_VBG<br/>Function: Missile detection<br/>Metrics: /metrics:8000]
-        RS3[radar_site-3<br/>Radar Detection<br/>Call Sign: RAD_VBG<br/>Function: Missile detection<br/>Metrics: /metrics:8000]
+    %% Detection Systems
+    subgraph "Detection Systems"
+        RS[radar_service<br/>Centralized Radar Management<br/>Port: 8006<br/>Function: Multi-installation detection<br/>Hundreds of radar sites<br/>Metrics: /metrics]
     end
     
-    %% Command & Control
-    subgraph "Command & Control"
-        CC[command_center<br/>Correlation Engine<br/>Port: 5558<br/>Function: Threat correlation<br/>Metrics: /metrics:8005]
-        BS[battery_sim<br/>Missile Battery<br/>Call Sign: BAT_LA<br/>Function: Interceptor firing<br/>Metrics: /metrics:8006]
-        IS[interceptor_sim<br/>Interceptor Simulator<br/>Function: Intercept simulation<br/>Metrics: /metrics:8007]
+    %% Counter-Defense Systems
+    subgraph "Counter-Defense Systems"
+        BS[battery_sim<br/>Missile Battery<br/>Call Sign: DEF_AEG_01<br/>Function: Interceptor firing<br/>Ammo management<br/>Metrics: /metrics:8007]
+        IS[interceptor_sim<br/>Interceptor Simulator<br/>Function: Intercept simulation<br/>Metrics: /metrics:8008]
     end
     
     %% Infrastructure
     subgraph "Infrastructure"
         NATS[NATS Server<br/>Message Broker<br/>Port: 4222<br/>Function: Pub/Sub messaging]
-        PG[(PostgreSQL<br/>Database<br/>Port: 5432<br/>Function: Spatial data storage<br/>Extension: PostGIS)]
+        ZMQ[ZeroMQ<br/>Low-latency messaging<br/>Function: Position broadcasting]
+        PG[(PostgreSQL<br/>Spatial Database<br/>Port: 5432<br/>Function: Data persistence<br/>Extension: PostGIS)]
         PROM[Prometheus<br/>Metrics Collector<br/>Port: 9090<br/>Function: Time series data]
         GRAF[Grafana<br/>Visualization<br/>Port: 3000<br/>Function: Metrics dashboard]
         PGA[PgAdmin<br/>DB Admin<br/>Port: 8080<br/>Function: Database management]
@@ -53,47 +65,47 @@ graph TB
         LW3[locust-worker-3<br/>Load Test Worker<br/>Function: Request generation]
     end
     
-    %% Message Flow
-    %% External to Core
-    API -->|POST /launch<br/>lat, lon, targetLat, targetLon| AL
+    %% Message Flow - External to Core
+    API -->|POST /launch<br/>Platform, coordinates, target| AL
     UI -->|HTTP GET| LM
+    CLI -->|curl commands| AL
     
     %% Core Service Communication
-    AL -->|ZeroMQ PUB<br/>missile_id, lat, lon, alt_m| TS
-    TS -->|ZeroMQ PUB<br/>track updates| RS1
-    TS -->|ZeroMQ PUB<br/>track updates| RS2
-    TS -->|ZeroMQ PUB<br/>track updates| RS3
+    AL -->|NATS PUB<br/>simulation.launch| NATS
+    NATS -->|NATS SUB<br/>simulation.launch| SS
     
-    %% Detection to Command
-    RS1 -->|NATS PUB<br/>radar.detection| NATS
-    RS2 -->|NATS PUB<br/>radar.detection| NATS
-    RS3 -->|NATS PUB<br/>radar.detection| NATS
+    %% Physics and Position Updates
+    SS -->|ZMQ PUB<br/>missile positions| ZMQ
+    ZMQ -->|ZMQ SUB<br/>position updates| RS
+    
+    %% Detection to Command Center
+    RS -->|NATS PUB<br/>radar.detection| NATS
     NATS -->|NATS SUB<br/>radar.detection| CC
     
-    %% Command to Battery
-    CC -->|ZeroMQ PUB<br/>intercept command| BS
-    BS -->|NATS PUB<br/>command.intercept| NATS
-    NATS -->|NATS SUB<br/>command.intercept| IS
+    %% Command Center to Battery
+    CC -->|NATS PUB<br/>battery.{callsign}.engage| NATS
+    NATS -->|NATS SUB<br/>engagement orders| BS
     
-    %% Interceptor Results
-    IS -->|NATS PUB<br/>interceptor.detonation| NATS
+    %% Battery to Simulation
+    BS -->|NATS PUB<br/>simulation.launch<br/>defense missile| NATS
+    NATS -->|NATS SUB<br/>defense launch| SS
+    
+    %% Engagement Results
+    SS -->|NATS PUB<br/>engagement.result| NATS
+    NATS -->|NATS SUB<br/>engagement results| CC
     
     %% Database Connections
-    AL -->|SQL<br/>INSERT missile_flight| PG
-    TS -->|SQL<br/>SELECT missile data| PG
-    RS1 -->|SQL<br/>SELECT radar range| PG
-    RS2 -->|SQL<br/>SELECT radar range| PG
-    RS3 -->|SQL<br/>SELECT radar range| PG
-    CC -->|SQL<br/>SELECT battery, UPDATE ammo| PG
-    BS -->|SQL<br/>SELECT ammo count| PG
+    AL -->|SQL<br/>INSERT/UPDATE installations| PG
+    SS -->|SQL<br/>UPDATE missile positions| PG
+    RS -->|SQL<br/>INSERT detection events| PG
+    CC -->|SQL<br/>SELECT batteries, INSERT engagements| PG
+    BS -->|SQL<br/>UPDATE ammo, INSERT missiles| PG
     
     %% Metrics Collection
+    SS -->|HTTP<br/>Prometheus metrics| PROM
     AL -->|HTTP<br/>Prometheus metrics| PROM
-    TS -->|HTTP<br/>Prometheus metrics| PROM
-    RS1 -->|HTTP<br/>Prometheus metrics| PROM
-    RS2 -->|HTTP<br/>Prometheus metrics| PROM
-    RS3 -->|HTTP<br/>Prometheus metrics| PROM
     CC -->|HTTP<br/>Prometheus metrics| PROM
+    RS -->|HTTP<br/>Prometheus metrics| PROM
     BS -->|HTTP<br/>Prometheus metrics| PROM
     IS -->|HTTP<br/>Prometheus metrics| PROM
     
@@ -108,300 +120,342 @@ graph TB
     PG -->|HTTP<br/>database access| PGA
     
     %% Styling
-    classDef service fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef coreService fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef detection fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef defense fill:#fff8e1,stroke:#f57f17,stroke-width:2px
     classDef infrastructure fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     classDef external fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef detection fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef command fill:#fff8e1,stroke:#f57f17,stroke-width:2px
-    classDef loadtest fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef loadtest fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     
-    class AL,TS service
-    class NATS,PG,PROM,GRAF,PGA infrastructure
-    class UI,API external
-    class RS1,RS2,RS3 detection
-    class CC,BS,IS command
+    class SS,AL,CC coreService
+    class RS detection
+    class BS,IS defense
+    class NATS,ZMQ,PG,PROM,GRAF,PGA infrastructure
+    class UI,API,CLI external
     class LM,LW1,LW2,LW3 loadtest
 ```
 
-## Message Flow Details
+### Message Flow Sequence
 
-### 1. Missile Launch Sequence
 ```mermaid
 sequenceDiagram
     participant Client
     participant API as api_launcher
+    participant SS as simulation_service
+    participant RS as radar_service
+    participant CC as command_center
+    participant Battery as battery_sim
     participant DB as PostgreSQL
-    participant Track as track_sim
-    participant Radar as radar_site
+    participant NATS as NATS Server
     
-    Client->>API: POST /launch (lat, lon, target)
-    API->>DB: INSERT missile_flight
-    API->>Track: ZeroMQ: missile data
-    Track->>Track: Physics simulation
-    Track->>Radar: ZeroMQ: track updates
-    Radar->>Radar: Range calculation
-    alt Missile in range
-        Radar->>NATS: radar.detection
+    %% Missile Launch
+    Client->>API: POST /launch (platform, coordinates, target)
+    API->>DB: INSERT active_missile
+    API->>NATS: simulation.launch
+    NATS->>SS: simulation.launch
+    
+    %% Physics Simulation
+    SS->>SS: Physics calculations (SciPy)
+    SS->>DB: UPDATE missile position
+    SS->>NATS: missile.position (broadcast)
+    
+    %% Radar Detection (Multiple Installations)
+    RS->>DB: SELECT active missiles
+    RS->>RS: Check all radar installations
+    RS->>RS: Range calculation & detection probability
+    alt Missile detected by any radar
+        RS->>DB: INSERT detection_event
+        RS->>NATS: radar.detection
+        NATS->>CC: radar.detection
+    end
+    
+    %% Threat Assessment
+    CC->>CC: Threat assessment & battery selection
+    CC->>DB: SELECT available batteries
+    CC->>NATS: battery.{callsign}.engage
+    NATS->>Battery: engagement order
+    
+    %% Counter-Missile Launch
+    Battery->>DB: UPDATE ammo count
+    Battery->>DB: INSERT defense missile
+    Battery->>NATS: simulation.launch (defense)
+    NATS->>SS: defense missile launch
+    
+    %% Intercept Simulation
+    SS->>SS: Intercept calculation
+    alt Successful intercept
+        SS->>DB: UPDATE both missiles as destroyed
+        SS->>NATS: engagement.result (success)
+        NATS->>CC: intercept success
+    else Missed intercept
+        SS->>NATS: engagement.result (failure)
+        NATS->>CC: intercept failure
+        CC->>CC: Retry with different battery
     end
 ```
 
-### 2. Intercept Sequence
-```mermaid
-sequenceDiagram
-    participant Radar1 as radar_site-1
-    participant Radar2 as radar_site-2
-    participant NATS
-    participant CC as command_center
-    participant DB as PostgreSQL
-    participant Battery as battery_sim
-    participant Interceptor as interceptor_sim
-    
-    Radar1->>NATS: radar.detection
-    Radar2->>NATS: radar.detection
-    NATS->>CC: radar.detection (correlated)
-    CC->>DB: SELECT battery, UPDATE ammo
-    CC->>Battery: ZeroMQ: intercept command
-    Battery->>NATS: command.intercept
-    NATS->>Interceptor: command.intercept
-    Interceptor->>Interceptor: Flight simulation
-    Interceptor->>NATS: interceptor.detonation
-```
-
-## Component Functions
-
 ### Core Services
-- **api_launcher**: REST API for missile launches, stores flight data in PostgreSQL
-- **track_sim**: Physics simulation of missile trajectories, publishes track updates via ZeroMQ
 
-### Detection System
-- **radar_site** (3 replicas): Geographic missile detection using PostGIS spatial queries
-- **Functions**: Range calculation, signal-to-noise ratio simulation, detection correlation
+1. **Simulation Service** (`simulation_service/`)
+   - Central physics engine using SciPy for realistic trajectory calculations
+   - Coordinates all missile movements and interactions
+   - Handles atmospheric effects, gravity, and fuel consumption
+   - Broadcasts position updates via ZMQ and NATS
 
-### Command & Control
-- **command_center**: Correlates multiple radar detections, selects optimal battery for intercept
-- **battery_sim**: Manages ammunition, fires interceptors based on command center orders
-- **interceptor_sim**: Simulates interceptor missile flight and detonation
+2. **API Launcher** (`api_launcher/`)
+   - RESTful API for launching missiles and managing installations
+   - Platform type management and installation configuration
+   - Real-time status monitoring and metrics
+
+3. **Command Center** (`command_center/`)
+   - Threat assessment and analysis
+   - Battery selection and engagement coordination
+   - Retry logic with intelligent battery selection
+   - Maximum 3 engagement attempts per target
+
+4. **Radar Service** (`radar_service/`)
+   - **Centralized radar management** supporting hundreds of installations
+   - Realistic detection with probability-based calculations
+   - Parallel processing of multiple radar sites
+   - Track management and confidence scoring
+   - Efficient resource utilization with thread pools
+
+5. **Battery Simulation** (`battery_sim/`)
+   - Counter-missile launch coordination
+   - Ammunition management and reload timing
+   - Engagement preparation and execution
 
 ### Infrastructure
-- **NATS**: Message broker for asynchronous communication between services
-- **PostgreSQL**: Spatial database with PostGIS extension for geographic calculations
-- **Prometheus**: Metrics collection and time-series storage
-- **Grafana**: Metrics visualization and dashboards
-- **PgAdmin**: Database administration interface
 
-### Load Testing
-- **locust-master**: Coordinates distributed load testing, provides web UI
-- **locust-worker** (3 replicas): Generate HTTP requests to test system performance
+- **PostgreSQL + PostGIS**: Spatial database with comprehensive schema
+- **NATS**: High-performance messaging for service communication
+- **ZeroMQ**: Low-latency position broadcasting
+- **Prometheus**: Metrics collection and monitoring
+- **Grafana**: Visualization and dashboards
 
-## Architecture
+## 🚀 Quick Start
 
-The system consists of several microservices:
+### Prerequisites
 
-- **api_launcher**: REST API for launching missiles
-- **track_sim**: Simulates missile trajectories using ZeroMQ
-- **radar_site**: Radar detection system (3 replicas)
-- **command_center**: Correlates radar detections and orders intercepts
-- **battery_sim**: Missile battery that fires interceptors
-- **interceptor_sim**: Simulates interceptor missiles
-- **nats**: Message broker for inter-service communication
-- **postgres**: Database with PostGIS for spatial data
-- **prometheus**: Metrics collection
-- **grafana**: Metrics visualization
-- **pgadmin**: Database administration
+- Docker and Docker Compose
+- Python 3.11+ (for local development)
 
-## Recent Fixes Applied
+### Installation
 
-### 1. SQL Syntax Error in radar_site.py
-- **Issue**: Malformed SQL query with inline comments causing syntax errors
-- **Fix**: Properly formatted multi-line SQL query with comments outside the string
-
-### 2. Database Connection Timing Issues
-- **Issue**: Services trying to connect to PostgreSQL before it's ready
-- **Fix**: Added health checks to PostgreSQL and retry logic to all services
-- **Fix**: Updated docker-compose.yml with proper service dependencies
-
-### 3. Missing asyncio Import
-- **Issue**: track_sim.py missing asyncio import
-- **Fix**: Added proper import and restructured the main execution
-
-### 4. ZeroMQ Async Operations
-- **Issue**: Services using blocking ZeroMQ operations in async contexts
-- **Fix**: Updated all services to use proper async ZeroMQ methods (`await sock.recv()`, `await pub.send_json()`)
-- **Fix**: Added proper error handling and timeouts for ZeroMQ operations
-
-### 5. Service Dependencies
-- **Issue**: Services starting before dependencies are ready
-- **Fix**: Added health checks and proper dependency conditions in docker-compose.yml
-
-## Quick Start
-
-1. **Build and start the system**:
+1. **Clone the repository**
    ```bash
-   python build_system.py
+   git clone <repository-url>
+   cd missile-defense-sim
    ```
-   
-   Or manually:
+
+2. **Start the system**
    ```bash
    docker-compose up -d
    ```
 
-2. **Wait for services to initialize** (check logs):
-   ```bash
-   docker-compose logs -f
-   ```
-
-3. **Debug the system** (if needed):
-   ```bash
-   python debug_system.py
-   ```
-
-4. **Test the system**:
-   ```bash
-   python test_system.py
-   ```
-
-5. **Monitor the system**:
+3. **Access services**
+   - API Documentation: http://localhost:9000/docs
+   - Grafana Dashboard: http://localhost:3000 (admin/admin)
    - Prometheus: http://localhost:9090
-   - Grafana: http://localhost:3000 (admin/admin)
    - PgAdmin: http://localhost:8080 (admin@missilesim.com/admin123)
-   - Locust: http://localhost:8089
 
-## API Usage
+### Basic Usage
 
-### Launch a Missile
+1. **Launch an attack missile**
+   ```bash
+   curl -X POST "http://localhost:9000/launch" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "platform_nickname": "SCUD-V Platform",
+       "launch_callsign": "ATK_SCUD_01",
+       "launch_lat": 34.05,
+       "launch_lon": -118.25,
+       "launch_alt": 0,
+       "target_lat": 34.10,
+       "target_lon": -118.00,
+       "target_alt": 0,
+       "missile_type": "attack"
+     }'
+   ```
+
+2. **Monitor active missiles**
+   ```bash
+   curl "http://localhost:9000/missiles/active"
+   ```
+
+3. **View recent detections**
+   ```bash
+   curl "http://localhost:9000/detections/recent"
+   ```
+
+## 📊 Database Schema
+
+### Core Tables
+
+- **`platform_type`**: Platform capabilities and characteristics
+- **`installation`**: Physical locations of all systems
+- **`active_missile`**: Currently flying missiles (attack and defense)
+- **`detection_event`**: Radar detection records
+- **`engagement`**: Counter-missile engagement attempts
+- **`detonation_event`**: Impact and explosion records
+
+### Platform Categories
+
+1. **Launch Platforms** (`launch_platform`)
+   - SCUD-V Platform
+   - Type-093A Shang-II Class Submarine
+   - DF-21D Platform
+   - Iskander-M Platform
+
+2. **Detection Systems** (`detection_system`)
+   - EL/M-2084 Radar
+   - LTAMDS Radar
+   - NGP/NGG Satellite
+   - X-BAND Radar
+   - Forward Based Radar
+   - Ground Based Tracking Radar
+
+3. **Counter-Defense Systems** (`counter_defense`)
+   - Aegis Ballistic Missile Defense System
+   - LIM-49 Nike Zeus Anti Ballistic Missile
+   - THAAD System
+   - Patriot PAC-3
+   - SM-3 Block IIA
+
+## 🔧 Configuration
+
+### Environment Variables
+
+- `DB_DSN`: PostgreSQL connection string
+- `CALL_SIGN`: Service-specific callsign
+- `RADAR_CALL_SIGN`: Radar installation callsign
+- `BATTERY_CALL_SIGN`: Battery installation callsign
+
+### Simulation Parameters
+
+Key physics parameters are configurable in the database:
+
+- `simulation_tick_ms`: Update interval (default: 100ms)
+- `physics_gravity_mps2`: Gravitational acceleration
+- `physics_air_density_sea_level`: Atmospheric density
+- `max_engagement_retries`: Maximum counter-missile attempts (default: 3)
+
+## 📈 Monitoring
+
+### Prometheus Metrics
+
+- **Missile Operations**: Launches, detections, engagements, intercepts
+- **System Performance**: Response times, throughput, error rates
+- **Resource Usage**: CPU, memory, database connections
+- **Business Metrics**: Success rates, threat levels, battery status
+- **Radar Metrics**: Detection counts per installation, latency, false alarms
+
+### Grafana Dashboards
+
+Pre-configured dashboards for:
+- Real-time missile tracking
+- System performance monitoring
+- Engagement success rates
+- Threat assessment visualization
+- Radar coverage and detection statistics
+
+## 🎮 Advanced Features
+
+### Realistic Physics
+
+- **Atmospheric Effects**: Air density variation with altitude
+- **Gravitational Forces**: Accurate gravity calculations
+- **Fuel Consumption**: Realistic fuel burn rates
+- **Drag Forces**: Aerodynamic drag based on velocity and altitude
+
+### Intelligent Defense
+
+- **Threat Assessment**: Multi-factor threat level calculation
+- **Battery Selection**: Optimal battery selection based on range, accuracy, and availability
+- **Retry Logic**: Automatic retry with different batteries on failure
+- **Intercept Prediction**: Advanced trajectory analysis for intercept points
+
+### Scalable Architecture
+
+- **Microservices**: Independent, scalable service components
+- **Message Queuing**: Reliable communication via NATS and ZeroMQ
+- **Spatial Database**: Efficient geographic queries with PostGIS
+- **Metrics Collection**: Comprehensive monitoring with Prometheus
+- **Centralized Radar Management**: Efficient handling of hundreds of radar installations
+
+## 🧪 Testing
+
+### Load Testing
+
+Use Locust for performance testing:
+
 ```bash
-curl -X POST "http://localhost:9000/launch?lat=34.0522&lon=-118.2437&targetLat=33.7490&targetLon=-84.3880&missileType=SCUD-C"
+# Access Locust UI
+http://localhost:8089
+
+# Run load tests
+docker-compose run locust-worker
 ```
 
-### Check Metrics
+### API Testing
+
 ```bash
-curl http://localhost:8003/metrics  # api_launcher
-curl http://localhost:8004/metrics  # track_sim
-curl http://localhost:8005/metrics  # command_center
-curl http://localhost:8006/metrics  # battery_sim
-curl http://localhost:8007/metrics  # interceptor_sim
+# Health check
+curl http://localhost:9000/health
+
+# Get available platforms
+curl http://localhost:9000/platforms
+
+# Get installations
+curl http://localhost:9000/installations
 ```
 
-## Environment Variables
-
-Copy `env-example` to `.env` and modify as needed:
-
-- `RADAR_CALL_SIGN`: Radar site call sign (default: RAD_VBG)
-- `BATTERY_CALL_SIGN`: Battery call sign (default: BAT_LA)
-
-## Troubleshooting
+## 🔍 Troubleshooting
 
 ### Common Issues
 
-1. **Database connection errors**: Wait for PostgreSQL to fully initialize (check health status)
-2. **Service startup failures**: Check logs with `docker-compose logs <service_name>`
-3. **ZeroMQ connection issues**: Ensure services start in the correct order
-4. **Async operation errors**: All ZeroMQ operations now use proper async methods
-5. **Locust UI not loading**: Check if Locust services are running and port 8089 is available
+1. **Database Connection Errors**
+   - Ensure PostgreSQL is healthy: `docker-compose ps postgres`
+   - Check connection string in environment variables
 
-### Debug Commands
+2. **Service Communication Issues**
+   - Verify NATS is running: `docker-compose ps nats`
+   - Check service dependencies in docker-compose.yml
+
+3. **Physics Calculation Errors**
+   - Ensure simulation service has sufficient memory
+   - Check SciPy and NumPy versions in requirements
+
+4. **Radar Performance Issues**
+   - Monitor radar service metrics for high CPU usage
+   - Adjust thread pool size for large numbers of installations
+
+### Logs
 
 ```bash
-# Check system health
-python debug_system.py
+# View all service logs
+docker-compose logs -f
 
-# Check service status
-docker-compose ps
-
-# View logs for specific service
-docker-compose logs -f api_launcher
-
-# Restart specific service
-docker-compose restart api_launcher
-
-# Check database connectivity
-docker-compose exec postgres pg_isready -U missiles -d missilesim
-
-# Rebuild and restart all services
-docker-compose down
-docker-compose build
-docker-compose up -d
+# View specific service logs
+docker-compose logs -f simulation_service
+docker-compose logs -f radar_service
+docker-compose logs -f command_center
 ```
 
-### ZeroMQ Debugging
+## 🤝 Contributing
 
-If you see ZeroMQ-related errors:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Submit a pull request
 
-1. **Check socket connections**: Ensure services are binding/connecting to correct ports
-2. **Verify async usage**: All ZeroMQ operations should use `await`
-3. **Check timeouts**: Services use 100ms timeouts for non-blocking operations
+## 📄 License
 
-### Locust Debugging
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-If Locust UI is not loading:
+## 🙏 Acknowledgments
 
-1. **Check Locust services**: `docker-compose ps locust-master locust-worker`
-2. **Check Locust logs**: `docker-compose logs -f locust-master`
-3. **Restart Locust**: `docker-compose restart locust-master locust-worker`
-4. **Rebuild Locust**: `docker-compose build locust-master locust-worker`
-5. **Check port availability**: `netstat -an | grep 8089`
-6. **Test Locust specifically**: `python test_locust.py`
-
-Common Locust issues:
-- **Port 8089 already in use**: Stop other services using this port
-- **Workers not connecting**: Check network connectivity between master and workers
-- **API endpoint unreachable**: Ensure api_launcher is running and accessible
-
-### Build Issues
-
-If you encounter build failures:
-
-1. **Locust build fails**: The Locust image doesn't support `apt-get` operations
-   - **Solution**: Use the simplified Dockerfile (already fixed)
-   - **Alternative**: `docker-compose build --no-cache locust-master locust-worker`
-
-2. **Permission errors**: Some Docker images run as non-root users
-   - **Solution**: Avoid using `apt-get` in Dockerfiles
-   - **Alternative**: Use Python-based alternatives for system tools
-
-3. **Port conflicts**: Services trying to bind to already-used ports
-   - **Solution**: Stop conflicting services or change ports
-   - **Check**: `netstat -an | grep <port_number>`
-
-4. **Memory issues**: Docker running out of memory during build
-   - **Solution**: Increase Docker memory allocation
-   - **Alternative**: Build services individually: `docker-compose build <service_name>`
-
-## System Flow
-
-1. **Launch**: API receives missile launch request
-2. **Track**: track_sim receives missile data via ZeroMQ and simulates trajectory
-3. **Detect**: radar_site detects missiles within range and publishes to NATS
-4. **Correlate**: command_center correlates multiple radar detections
-5. **Intercept**: command_center orders battery to fire interceptor
-6. **Destroy**: interceptor_sim simulates intercept and publishes detonation
-
-## Metrics
-
-The system exposes Prometheus metrics for:
-- Missile launches
-- Radar detections
-- Intercept orders
-- Battery fires
-- Successful intercepts
-- Correlation latency
-
-## Development
-
-To modify the system:
-
-1. Edit the Python files in each service directory
-2. Rebuild the affected service: `docker-compose build <service_name>`
-3. Restart the service: `docker-compose restart <service_name>`
-
-## Load Testing
-
-The system includes Locust for load testing:
-- Master: http://localhost:8089
-- Workers: 3 replicas for distributed load testing
-
-## ZeroMQ Ports
-
-- **5556**: api_launcher → track_sim (missile launches)
-- **5557**: track_sim → radar_site (track updates)
-- **5558**: command_center → battery_sim (intercept orders) 
+- Real-world missile defense system specifications
+- Physics calculations based on publicly available data
+- Military platform characteristics from open sources

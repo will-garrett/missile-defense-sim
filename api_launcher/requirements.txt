@@ -1,7 +1,8 @@
-asyncpg
-fastapi
-uvicorn[standard]
-nats-py
+fastapi==0.104.1
+uvicorn==0.24.0
+asyncpg==0.29.0
+prometheus-client==0.19.0
+nats-py==2.6.0
+pydantic==2.5.0
 pyzmq
-prometheus-client
 python-dateutil
