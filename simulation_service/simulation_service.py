@@ -16,6 +16,44 @@ from prometheus_client import start_http_server, Counter, Gauge, Histogram
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.spatial.distance import euclidean
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+from pydantic import BaseModel
+
+# FastAPI app
+app = FastAPI(title="Missile Defense Simulation Service", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Pydantic models for API
+class InstallationCreate(BaseModel):
+    platform_type_nickname: str
+    callsign: str
+    lat: float
+    lon: float
+    altitude_m: float = 0
+    is_mobile: bool = False
+    ammo_count: int = 0
+
+class InstallationResponse(BaseModel):
+    id: int
+    platform_type_nickname: str
+    callsign: str
+    lat: float
+    lon: float
+    altitude_m: float
+    is_mobile: bool
+    ammo_count: int
+
+class ScenarioSetup(BaseModel):
+    scenario_name: str
+    installations: List[InstallationCreate]
 
 # Prometheus metrics
 start_http_server(8000)
@@ -553,20 +591,233 @@ class SimulationService:
         if missile_id in self.missiles:
             await self.handle_missile_impact(missile_id)
 
-async def main():
-    """Main entry point"""
-    service = SimulationService()
-    await service.initialize()
+# Global simulation service instance
+simulation_service = None
+
+# API endpoints
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "simulation_service"}
+
+@app.get("/installations")
+async def get_installations():
+    """Get all installations"""
+    if not simulation_service:
+        raise HTTPException(status_code=503, detail="Simulation service not initialized")
+    
+    installations = []
+    async with simulation_service.db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT i.id, pt.nickname as platform_type_nickname, i.callsign, 
+                   ST_X(i.geom::geometry) as lon, ST_Y(i.geom::geometry) as lat,
+                   i.altitude_m, i.is_mobile, i.ammo_count
+            FROM installation i
+            JOIN platform_type pt ON i.platform_type_id = pt.id
+            ORDER BY i.callsign
+        """)
+        
+        for row in rows:
+            installations.append(InstallationResponse(
+                id=row['id'],
+                platform_type_nickname=row['platform_type_nickname'],
+                callsign=row['callsign'],
+                lat=row['lat'],
+                lon=row['lon'],
+                altitude_m=row['altitude_m'],
+                is_mobile=row['is_mobile'],
+                ammo_count=row['ammo_count']
+            ))
+    
+    return installations
+
+@app.post("/installations", response_model=InstallationResponse)
+async def create_installation(installation: InstallationCreate):
+    """Create a new installation"""
+    if not simulation_service:
+        raise HTTPException(status_code=503, detail="Simulation service not initialized")
     
     try:
-        await service.run_simulation_loop()
+        async with simulation_service.db_pool.acquire() as conn:
+            # Get platform type ID
+            platform_type_id = await conn.fetchval(
+                "SELECT id FROM platform_type WHERE nickname = $1",
+                installation.platform_type_nickname
+            )
+            
+            if not platform_type_id:
+                raise HTTPException(status_code=404, detail=f"Platform type '{installation.platform_type_nickname}' not found")
+            
+            # Create installation
+            installation_id = await conn.fetchval("""
+                INSERT INTO installation (platform_type_id, callsign, geom, altitude_m, is_mobile, ammo_count)
+                VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6, $7)
+                RETURNING id
+            """, platform_type_id, installation.callsign, installation.lon, installation.lat,
+                 installation.altitude_m, installation.is_mobile, installation.ammo_count)
+            
+            # Reload installations in simulation service
+            await simulation_service.load_installations()
+            
+            return InstallationResponse(
+                id=installation_id,
+                platform_type_nickname=installation.platform_type_nickname,
+                callsign=installation.callsign,
+                lat=installation.lat,
+                lon=installation.lon,
+                altitude_m=installation.altitude_m,
+                is_mobile=installation.is_mobile,
+                ammo_count=installation.ammo_count
+            )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create installation: {str(e)}")
+
+@app.delete("/installations/{callsign}")
+async def delete_installation(callsign: str):
+    """Delete an installation by callsign"""
+    if not simulation_service:
+        raise HTTPException(status_code=503, detail="Simulation service not initialized")
+    
+    try:
+        async with simulation_service.db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM installation WHERE callsign = $1",
+                callsign
+            )
+            
+            if result == "DELETE 0":
+                raise HTTPException(status_code=404, detail=f"Installation '{callsign}' not found")
+            
+            # Reload installations in simulation service
+            await simulation_service.load_installations()
+            
+            return {"message": f"Installation '{callsign}' deleted successfully"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete installation: {str(e)}")
+
+@app.post("/scenarios/setup")
+async def setup_scenario(scenario: ScenarioSetup):
+    """Set up a complete scenario with multiple installations"""
+    if not simulation_service:
+        raise HTTPException(status_code=503, detail="Simulation service not initialized")
+    
+    try:
+        created_installations = []
+        
+        # Clear existing installations (optional - you might want to keep some)
+        async with simulation_service.db_pool.acquire() as conn:
+            await conn.execute("DELETE FROM installation")
+        
+        # Create new installations for the scenario
+        for installation in scenario.installations:
+            # Get platform type ID
+            platform_type_id = await conn.fetchval(
+                "SELECT id FROM platform_type WHERE nickname = $1",
+                installation.platform_type_nickname
+            )
+            
+            if not platform_type_id:
+                raise HTTPException(status_code=404, detail=f"Platform type '{installation.platform_type_nickname}' not found")
+            
+            # Create installation
+            installation_id = await conn.fetchval("""
+                INSERT INTO installation (platform_type_id, callsign, geom, altitude_m, is_mobile, ammo_count)
+                VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6, $7)
+                RETURNING id
+            """, platform_type_id, installation.callsign, installation.lon, installation.lat,
+                 installation.altitude_m, installation.is_mobile, installation.ammo_count)
+            
+            created_installations.append(InstallationResponse(
+                id=installation_id,
+                platform_type_nickname=installation.platform_type_nickname,
+                callsign=installation.callsign,
+                lat=installation.lat,
+                lon=installation.lon,
+                altitude_m=installation.altitude_m,
+                is_mobile=installation.is_mobile,
+                ammo_count=installation.ammo_count
+            ))
+        
+        # Reload installations in simulation service
+        await simulation_service.load_installations()
+        
+        return {
+            "scenario_name": scenario.scenario_name,
+            "message": f"Scenario '{scenario.scenario_name}' set up successfully",
+            "installations_created": len(created_installations),
+            "installations": created_installations
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to set up scenario: {str(e)}")
+
+@app.get("/platform-types")
+async def get_platform_types():
+    """Get all available platform types"""
+    if not simulation_service:
+        raise HTTPException(status_code=503, detail="Simulation service not initialized")
+    
+    async with simulation_service.db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT nickname, category, description, 
+                   max_speed_mps, max_range_m, max_altitude_m, blast_radius_m,
+                   max_payload_kg, fuel_capacity_kg, thrust_n,
+                   detection_range_m, sweep_rate_deg_per_sec,
+                   reload_time_sec, accuracy_percent, ammo_capacity, cooldown_sec
+            FROM platform_type
+            ORDER BY category, nickname
+        """)
+        
+        platform_types = []
+        for row in rows:
+            platform_types.append({
+                "nickname": row['nickname'],
+                "category": row['category'],
+                "description": row['description'],
+                "max_speed_mps": row['max_speed_mps'],
+                "max_range_m": row['max_range_m'],
+                "max_altitude_m": row['max_altitude_m'],
+                "blast_radius_m": row['blast_radius_m'],
+                "max_payload_kg": row['max_payload_kg'],
+                "fuel_capacity_kg": row['fuel_capacity_kg'],
+                "thrust_n": row['thrust_n'],
+                "detection_range_m": row['detection_range_m'],
+                "sweep_rate_deg_per_sec": row['sweep_rate_deg_per_sec'],
+                "reload_time_sec": row['reload_time_sec'],
+                "accuracy_percent": row['accuracy_percent'],
+                "ammo_capacity": row['ammo_capacity'],
+                "cooldown_sec": row['cooldown_sec']
+            })
+        
+        return platform_types
+
+async def main():
+    """Main entry point"""
+    global simulation_service
+    
+    # Initialize simulation service
+    simulation_service = SimulationService()
+    await simulation_service.initialize()
+    
+    # Start simulation loop in background
+    simulation_task = asyncio.create_task(simulation_service.run_simulation_loop())
+    
+    # Start FastAPI server
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    server = uvicorn.Server(config)
+    
+    try:
+        await server.serve()
     except KeyboardInterrupt:
         print("Simulation service shutting down...")
+        simulation_task.cancel()
     finally:
-        if service.db_pool:
-            await service.db_pool.close()
-        if service.nats_client:
-            await service.nats_client.close()
+        if simulation_service.db_pool:
+            await simulation_service.db_pool.close()
+        if simulation_service.nats_client:
+            await simulation_service.nats_client.close()
 
 if __name__ == "__main__":
     asyncio.run(main()) 

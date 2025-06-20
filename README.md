@@ -273,10 +273,13 @@ The system includes comprehensive scenario-based testing using Locust for realis
 
 **Using Locust (Load Testing):**
 ```bash
-# Start Locust master
+# Start the system
+docker-compose up -d
+
+# Run Locust master
 docker-compose up locust-master
 
-# Start Locust workers (in separate terminals)
+# Run Locust workers
 docker-compose up locust-worker
 
 # Access Locust UI at http://localhost:8089
@@ -287,13 +290,72 @@ docker-compose up locust-worker
 # List available scenarios
 python locust/scenario_runner.py --list
 
-# Run specific scenario
+# Run specific scenario (automatically sets up installations via API)
 python locust/scenario_runner.py defend_hawaii
 python locust/scenario_runner.py iron_dome --delay 3
-python locust/scenario_runner.py ww3 --api-url http://localhost:9000
+python locust/scenario_runner.py ww3 --simulation-api http://localhost:8001
 
 # Run with custom parameters
-python locust/scenario_runner.py middle_east --delay 2 --api-url http://localhost:9000
+python locust/scenario_runner.py middle_east --delay 2 --simulation-api http://localhost:8001
+```
+
+#### Simulation Service API
+
+The simulation service now provides a REST API for managing installations and scenarios:
+
+**Health Check:**
+```bash
+curl http://localhost:8001/health
+```
+
+**Get All Installations:**
+```bash
+curl http://localhost:8001/installations
+```
+
+**Create Installation:**
+```bash
+curl -X POST http://localhost:8001/installations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platform_type_nickname": "Aegis BMD SM-3",
+    "callsign": "DEF_AEGIS_01",
+    "lat": 34.20,
+    "lon": -118.50,
+    "altitude_m": 0,
+    "is_mobile": false,
+    "ammo_count": 32
+  }'
+```
+
+**Set Up Complete Scenario:**
+```bash
+curl -X POST http://localhost:8001/scenarios/setup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scenario_name": "defend_hawaii",
+    "installations": [
+      {
+        "platform_type_nickname": "Aegis BMD SM-3",
+        "callsign": "DEF_AEGIS_01",
+        "lat": 21.31,
+        "lon": -157.86,
+        "altitude_m": 0,
+        "is_mobile": false,
+        "ammo_count": 32
+      }
+    ]
+  }'
+```
+
+**Get Platform Types:**
+```bash
+curl http://localhost:8001/platform-types
+```
+
+**Delete Installation:**
+```bash
+curl -X DELETE http://localhost:8001/installations/DEF_AEGIS_01
 ```
 
 #### Scenario Configuration
@@ -311,6 +373,15 @@ Each scenario includes:
 - Phased attack sequences
 - Defense system responses
 - Timing and coordination parameters
+
+#### Dynamic Installation Management
+
+The system now supports dynamic installation management:
+- **No Database Defaults**: All installations are created via API calls
+- **Scenario-Specific Setup**: Each scenario creates its own installations
+- **Automatic Cleanup**: Previous installations are cleared when setting up new scenarios
+- **Realistic Positioning**: Installations are placed with appropriate geographic distribution
+- **Ammunition Management**: Each installation has realistic ammunition counts
 
 ## 🚀 Quick Start
 
