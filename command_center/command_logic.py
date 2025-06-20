@@ -100,6 +100,8 @@ class CommandLogic:
                 WHERE pt.category = 'counter_defense' AND i.status = 'active'
             """)
             
+            print(f"DEBUG: Found {len(rows)} counter defense batteries in database")
+            
             for row in rows:
                 # Parse geometry - convert WKB to WKT first
                 geom_wkt = await conn.fetchval(
@@ -112,7 +114,7 @@ class CommandLogic:
                 lon = float(geom_parts[0])
                 lat = float(geom_parts[1])
                 
-                self.available_batteries[row['callsign']] = BatteryCapability(
+                battery = BatteryCapability(
                     battery_id=row['id'],
                     callsign=row['callsign'],
                     position=(lat, lon, row['altitude_m']),
@@ -124,6 +126,9 @@ class CommandLogic:
                     status=row['status'],
                     time_to_ready=0.0
                 )
+                
+                self.available_batteries[row['callsign']] = battery
+                print(f"DEBUG: Loaded battery {battery.callsign} at {battery.position}, range: {battery.max_range}m, altitude: {battery.max_altitude}m, ammo: {battery.ammo_count}")
     
     async def handle_radar_detection(self, msg):
         """Handle radar detection events"""
@@ -147,6 +152,8 @@ class CommandLogic:
             position = data['position']
             velocity = data['velocity']
             missile_type = data.get('missile_type', 'attack')
+            
+            print(f"DEBUG: Received missile position for {missile_id} at {position}, type: {missile_type}")
             
             if missile_type == 'attack':
                 await self.update_threat_assessment(missile_id, position, None, velocity)
@@ -181,6 +188,8 @@ class CommandLogic:
                                      velocity: Optional[Dict] = None):
         """Update threat assessment for a missile"""
         with COMMAND_DECISIONS.time():
+            print(f"DEBUG: update_threat_assessment called for missile {missile_id}")
+            
             # Get missile details from database
             async with self.db_pool.acquire() as conn:
                 missile = await conn.fetchrow("""
@@ -191,7 +200,13 @@ class CommandLogic:
                 """, missile_id)
                 
                 if not missile:
+                    print(f"DEBUG: Missile {missile_id} not found in database")
+                    # Check if missile exists at all
+                    all_missiles = await conn.fetch("SELECT id, callsign, missile_type FROM active_missile LIMIT 5")
+                    print(f"DEBUG: Sample missiles in database: {[dict(m) for m in all_missiles]}")
                     return
+                
+                print(f"DEBUG: Found missile {missile_id} in database: {dict(missile)}")
             
             # Calculate predicted impact point and time
             current_pos = (position['y'], position['x'], position['z'])  # lat, lon, alt
@@ -205,6 +220,7 @@ class CommandLogic:
             
             # Assess threat level
             threat_level = self.assess_threat_level(predicted_impact, missile['blast_radius_m'], time_to_impact)
+            print(f"DEBUG: Missile {missile_id} threat level: {threat_level}, time_to_impact: {time_to_impact}s, position: {current_pos}")
             
             # Update or create threat assessment
             if missile_id in self.active_threats:
@@ -235,7 +251,10 @@ class CommandLogic:
             
             # Consider engagement for high-priority threats
             if threat_level in ['high', 'critical']:
+                print(f"DEBUG: Calling consider_engagement for missile {missile_id} with threat level {threat_level}")
                 await self.consider_engagement(missile_id)
+            else:
+                print(f"DEBUG: NOT calling consider_engagement for missile {missile_id} with threat level {threat_level}")
     
     def predict_impact_point(self, current_pos: Tuple[float, float, float], 
                            velocity: Dict) -> Tuple[float, float, float]:
@@ -274,18 +293,32 @@ class CommandLogic:
     def estimate_time_to_impact(self, current_pos: Tuple[float, float, float], 
                               target_pos: Tuple[float, float, float]) -> float:
         """Estimate time to impact without velocity data"""
-        # Simplified estimation
-        return 60.0  # Default 60 seconds
+        # More realistic estimation based on altitude and distance
+        lat, lon, alt = current_pos
+        target_lat, target_lon, target_alt = target_pos
+        
+        # Calculate horizontal distance
+        lat_diff = target_lat - lat
+        lon_diff = target_lon - lon
+        horizontal_distance = math.sqrt(lat_diff**2 + lon_diff**2) * 111000  # meters
+        
+        # Estimate time based on typical missile speed and altitude
+        if alt > 1000:  # High altitude
+            return 30.0  # 30 seconds
+        elif alt > 100:  # Medium altitude
+            return 60.0  # 1 minute
+        else:  # Low altitude
+            return 120.0  # 2 minutes
     
     def assess_threat_level(self, impact_point: Tuple[float, float, float], 
                           blast_radius: float, time_to_impact: float) -> str:
         """Assess threat level based on impact point and time"""
-        # Simplified threat assessment
-        if time_to_impact < 30:
+        # More aggressive threat assessment for testing
+        if time_to_impact < 60:  # 1 minute
             return 'critical'
-        elif time_to_impact < 120:
+        elif time_to_impact < 180:  # 3 minutes
             return 'high'
-        elif time_to_impact < 300:
+        elif time_to_impact < 600:  # 10 minutes
             return 'medium'
         else:
             return 'low'
@@ -316,59 +349,96 @@ class CommandLogic:
         best_solution = None
         best_score = 0
         
+        print(f"DEBUG: Looking for battery to intercept missile at position {threat.current_position}")
+        print(f"DEBUG: Available batteries: {list(self.available_batteries.keys())}")
+        
         for battery_callsign, battery in self.available_batteries.items():
+            print(f"DEBUG: Checking battery {battery_callsign} - status: {battery.status}, ammo: {battery.ammo_count}")
+            
             if battery.status != 'active' or battery.ammo_count <= 0:
+                print(f"DEBUG: Battery {battery_callsign} not available - status: {battery.status}, ammo: {battery.ammo_count}")
                 continue
             
+            print(f"DEBUG: About to call calculate_intercept_solution for battery {battery_callsign}")
             solution = self.calculate_intercept_solution(threat, battery)
+            print(f"DEBUG: calculate_intercept_solution returned: {solution}")
+            
             if solution:
                 # Score based on probability of success and time to launch
                 score = solution.probability_of_success / (solution.time_to_launch + 1)
+                print(f"DEBUG: Battery {battery_callsign} can intercept with score {score}")
                 if score > best_score:
                     best_score = score
                     best_solution = solution
+            else:
+                print(f"DEBUG: Battery {battery_callsign} cannot intercept - distance or altitude issue")
         
         return best_solution
     
     def calculate_intercept_solution(self, threat: ThreatAssessment, 
                                    battery: BatteryCapability) -> Optional[InterceptSolution]:
         """Calculate intercept solution for a battery"""
-        # Calculate distance to threat
-        battery_pos = battery.position
-        threat_pos = threat.current_position
-        
-        distance = math.sqrt(
-            (battery_pos[0] - threat_pos[0])**2 + 
-            (battery_pos[1] - threat_pos[1])**2 + 
-            (battery_pos[2] - threat_pos[2])**2
-        )
-        
-        # Check if battery can reach the threat
-        if distance > battery.max_range or threat_pos[2] > battery.max_altitude:
+        try:
+            print(f"DEBUG: calculate_intercept_solution called for battery {battery.callsign}")
+            
+            # Calculate distance to threat
+            battery_pos = battery.position
+            threat_pos = threat.current_position
+            
+            print(f"DEBUG: Battery {battery.callsign} at {battery_pos}, threat at {threat_pos}")
+            
+            distance = math.sqrt(
+                (float(battery_pos[0]) - threat_pos[0])**2 + 
+                (float(battery_pos[1]) - threat_pos[1])**2 + 
+                (float(battery_pos[2]) - threat_pos[2])**2
+            )
+            
+            print(f"DEBUG: Distance: {distance}m, battery max_range: {battery.max_range}m")
+            print(f"DEBUG: Threat altitude: {threat_pos[2]}m, battery max_altitude: {battery.max_altitude}m")
+            
+            # Only engage missiles that are airborne (above surface)
+            if threat_pos[2] <= 0:
+                print(f"DEBUG: Threat is underwater (z={threat_pos[2]}), skipping")
+                return None
+            
+            # Check if battery can reach the threat
+            if distance > battery.max_range:
+                print(f"DEBUG: Distance {distance}m exceeds battery range {battery.max_range}m")
+                return None
+                
+            if threat_pos[2] > battery.max_altitude:
+                print(f"DEBUG: Threat altitude {threat_pos[2]}m exceeds battery max altitude {battery.max_altitude}m")
+                return None
+            
+            print(f"DEBUG: Battery {battery.callsign} CAN intercept!")
+            
+            # Calculate intercept point (simplified)
+            intercept_lat = (float(battery_pos[0]) + threat_pos[0]) / 2
+            intercept_lon = (float(battery_pos[1]) + threat_pos[1]) / 2
+            intercept_alt = (float(battery_pos[2]) + threat_pos[2]) / 2
+            
+            # Calculate intercept time
+            intercept_time = threat.time_to_impact * 0.5  # Simplified
+            
+            # Calculate probability of success
+            probability = battery.accuracy * (1 - distance / battery.max_range)
+            
+            # Calculate time to launch
+            time_to_launch = battery.time_to_ready
+            
+            return InterceptSolution(
+                battery_callsign=battery.callsign,
+                intercept_point=(intercept_lat, intercept_lon, intercept_alt),
+                intercept_time=intercept_time,
+                intercept_altitude=intercept_alt,
+                probability_of_success=probability,
+                time_to_launch=time_to_launch
+            )
+        except Exception as e:
+            print(f"DEBUG: Error in calculate_intercept_solution: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-        
-        # Calculate intercept point (simplified)
-        intercept_lat = (battery_pos[0] + threat_pos[0]) / 2
-        intercept_lon = (battery_pos[1] + threat_pos[1]) / 2
-        intercept_alt = (battery_pos[2] + threat_pos[2]) / 2
-        
-        # Calculate intercept time
-        intercept_time = threat.time_to_impact * 0.5  # Simplified
-        
-        # Calculate probability of success
-        probability = battery.accuracy * (1 - distance / battery.max_range)
-        
-        # Calculate time to launch
-        time_to_launch = battery.time_to_ready
-        
-        return InterceptSolution(
-            battery_callsign=battery.callsign,
-            intercept_point=(intercept_lat, intercept_lon, intercept_alt),
-            intercept_time=intercept_time,
-            intercept_altitude=intercept_alt,
-            probability_of_success=probability,
-            time_to_launch=time_to_launch
-        )
     
     async def order_engagement(self, missile_id: str, solution: InterceptSolution):
         """Order a battery to engage a threat"""

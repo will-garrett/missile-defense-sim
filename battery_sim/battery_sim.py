@@ -107,7 +107,7 @@ class BatterySim:
                     accuracy_percent=85,
                     reload_time_sec=30,
                     max_speed_mps=3500,
-                    blast_radius_m=200
+                    blast_radius_m=50  # Defense missiles have blast radius for intercept detonation
                 )
     
     async def handle_engagement_order(self, msg):
@@ -274,6 +274,7 @@ class BatterySim:
             "target_alt": order.intercept_altitude,
             "missile_type": "defense",
             "target_missile_id": order.target_missile_id,
+            "blast_radius": self.battery_capability.blast_radius_m,  # Include blast radius for intercept
             "timestamp": time.time()
         }
         

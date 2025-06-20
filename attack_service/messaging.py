@@ -205,7 +205,12 @@ class MessagingService:
                 )
         
         # Calculate airburst target position for realistic detonation
-        blast_radius = float(platform.get('blast_radius_m', 200.0))  # Default 200m blast radius
+        blast_radius = platform.get('blast_radius_m')
+        if blast_radius is None or blast_radius <= 0:
+            print(f"WARNING: Platform {platform_nickname} has no blast radius set in database, using default 200m")
+            blast_radius = 200.0
+        else:
+            blast_radius = float(blast_radius)
         
         # For airburst detonation, calculate optimal detonation altitude
         # This should be above the target but within blast radius for maximum effectiveness

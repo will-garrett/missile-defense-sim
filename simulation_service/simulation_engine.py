@@ -71,6 +71,7 @@ class MissileState:
     target_missile_id: Optional[str] = None
     status: str = "active"
     launch_time: float = 0.0
+    blast_radius: float = 0.0  # Will be set from database platform_type
 
 class PhysicsEngine:
     def __init__(self):
@@ -312,7 +313,8 @@ class SimulationEngine:
     async def create_missile(self, platform_nickname: str, launch_callsign: str, 
                            launch_lat: float, launch_lon: float, launch_alt: float,
                            target_lat: float, target_lon: float, target_alt: float,
-                           missile_type: str = "attack") -> str:
+                           missile_type: str = "attack", blast_radius: float = None, 
+                           target_missile_id: str = None) -> str:
         """Create a new missile in the simulation"""
         missile_id = str(uuid.uuid4())
         
@@ -326,6 +328,9 @@ class SimulationEngine:
             
             if not platform:
                 raise ValueError(f"Platform {platform_nickname} not found")
+        
+        # Use provided blast radius or database value
+        missile_blast_radius = blast_radius if blast_radius is not None else float(platform['blast_radius_m']) if platform['blast_radius_m'] else 0.0
         
         # Use realistic values for JL-2 and similar SLBMs
         if platform_nickname in ["JL-2", "UGM-133 Trident II"]:
@@ -367,7 +372,9 @@ class SimulationEngine:
             fuel_consumption_rate=missile_fuel_consumption_rate,
             target_position=Vector3D(target_lon, target_lat, target_alt),
             missile_type=missile_type,
-            launch_time=time.time()
+            launch_time=time.time(),
+            blast_radius=missile_blast_radius,
+            target_missile_id=target_missile_id
         )
         
         self.missiles[missile_id] = missile
@@ -385,12 +392,12 @@ class SimulationEngine:
             await conn.execute("""
                 INSERT INTO active_missile (
                     id, platform_type_id, launch_installation_id, callsign, missile_type,
-                    target_geom, target_altitude_m, launch_ts, status
+                    target_geom, target_altitude_m, launch_ts, status, target_missile_id
                 ) VALUES ($1, $2, $3, $4, $5, 
                          ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography,
-                         $8, NOW(), 'active')
+                         $8, NOW(), 'active', $9)
             """, missile_id, platform_id, installation_id, missile.callsign, missile_type,
-                 target_lon, target_lat, target_alt)
+                 target_lon, target_lat, target_alt, missile.target_missile_id)
         
         print(f"Created missile {missile.callsign} at {launch_lat}, {launch_lon}")
         return missile_id
@@ -453,17 +460,12 @@ class SimulationEngine:
             pass
         elif missile.target_position and missile.position.z > 0:
             distance_to_target = (missile.position - missile.target_position).magnitude()
-            blast_radius = 200.0
-            if missile.missile_type == "attack":
-                async with self.db_pool.acquire() as conn:
-                    platform_blast_radius = await conn.fetchval("""
-                        SELECT pt.blast_radius_m 
-                        FROM platform_type pt 
-                        JOIN active_missile am ON pt.id = am.platform_type_id 
-                        WHERE am.id = $1
-                    """, missile_id)
-                    if platform_blast_radius:
-                        blast_radius = float(platform_blast_radius)
+            # Use the blast radius that was set from the database during missile creation
+            blast_radius = missile.blast_radius
+            if blast_radius <= 0:
+                print(f"WARNING: Missile {missile.callsign} has no blast radius set, using default 200m")
+                blast_radius = 200.0
+                
             target_horizontal_distance = math.sqrt(
                 (missile.position.x - missile.target_position.x)**2 + 
                 (missile.position.y - missile.target_position.y)**2
@@ -474,58 +476,141 @@ class SimulationEngine:
             if is_above_target and is_within_blast_radius and is_descending:
                 print(f"DEBUG: Missile {missile.callsign} detonating above target at position {missile.position} (blast radius: {blast_radius}m)")
                 await self.handle_missile_impact(missile_id)
+        
+        # Check for intercepts
+        await self.check_intercepts()
+    
+    async def check_intercepts(self):
+        """Check for intercepts between defense missiles and their targets"""
+        for defense_missile_id, defense_missile in self.missiles.items():
+            if (defense_missile.missile_type != "defense" or 
+                defense_missile.status != "active" or 
+                not defense_missile.target_missile_id):
+                continue
+            
+            target_missile_id = defense_missile.target_missile_id
+            if target_missile_id not in self.missiles:
+                continue
+            
+            target_missile = self.missiles[target_missile_id]
+            if target_missile.status != "active":
+                continue
+            
+            # Calculate distance between defense missile and target
+            distance = (defense_missile.position - target_missile.position).magnitude()
+            
+            # Check if defense missile is within blast radius of target
+            if distance <= defense_missile.blast_radius:
+                print(f"Intercept: Defense missile {defense_missile.callsign} intercepted target {target_missile.callsign} at distance {distance:.1f}m")
+                
+                # Handle the intercept
+                await self.handle_intercept(defense_missile_id, target_missile_id)
+                
+                # Also handle the defense missile impact
+                await self.handle_missile_impact(defense_missile_id)
     
     async def handle_missile_impact(self, missile_id: str):
-        """Handle missile impact or destruction"""
+        """Handle missile impact/detonation and record outcome"""
+        if missile_id not in self.missiles:
+            return
+            
         missile = self.missiles[missile_id]
-        missile.status = "impacted"
         
-        # Record detonation event
+        # Determine outcome type
+        outcome_type = 'detonated'
+        target_achieved = False
+        notes = ""
+        
+        if missile.fuel_remaining <= 0:
+            outcome_type = 'fuel_exhaustion'
+            notes = "Missile ran out of fuel"
+        elif missile.position.z <= 0:
+            outcome_type = 'ground_impact'
+            notes = "Missile hit ground/water"
+        elif missile.target_position:
+            # Check if missile detonated near target
+            distance_to_target = (missile.position - missile.target_position).magnitude()
+            if distance_to_target <= missile.blast_radius:
+                target_achieved = True
+                notes = f"Target achieved, detonated {distance_to_target:.1f}m from target"
+            else:
+                notes = f"Missed target by {distance_to_target:.1f}m"
+        
+        # Record outcome in database
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO detonation_event (
-                    missile_id, detonation_geom, detonation_altitude_m, blast_radius_m
-                ) VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4, $5)
-            """, missile_id, missile.position.x, missile.position.y, 
-                 missile.position.z, 200)  # Default blast radius
+                INSERT INTO missile_outcome (
+                    missile_id, callsign, missile_type, outcome_type, 
+                    outcome_location, outcome_altitude_m, blast_radius_m,
+                    target_achieved, notes
+                ) VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8, $9, $10)
+            """, 
+                missile_id, missile.callsign, 'attack', outcome_type,
+                missile.position.x, missile.position.y, missile.position.z,
+                missile.blast_radius, target_achieved, notes
+            )
+            
+            # Remove from active_missile table
+            await conn.execute("DELETE FROM active_missile WHERE id = $1", missile_id)
+        
+        print(f"Missile {missile.callsign} {outcome_type} at {missile.position}")
         
         # Remove from active missiles
         del self.missiles[missile_id]
-        ACTIVE_MISSILES.dec()
         
-        print(f"Missile {missile.callsign} detonated at {missile.position}")
+        # Publish impact event
+        impact_event = {
+            "type": "missile_impact",
+            "missile_id": missile_id,
+            "callsign": missile.callsign,
+            "outcome_type": outcome_type,
+            "position": {"x": missile.position.x, "y": missile.position.y, "z": missile.position.z},
+            "target_achieved": target_achieved,
+            "timestamp": time.time()
+        }
+        
+        await self.nats_client.publish("missile.impact", json.dumps(impact_event).encode())
     
     async def handle_intercept(self, defense_missile_id: str, target_missile_id: str):
-        """Handle successful intercept"""
-        defense_missile = self.missiles[defense_missile_id]
+        """Handle missile interception and record outcome"""
+        if target_missile_id not in self.missiles:
+            return
+            
         target_missile = self.missiles[target_missile_id]
         
-        # Mark both missiles as destroyed
-        defense_missile.status = "destroyed"
-        target_missile.status = "destroyed"
-        
-        # Record engagement
+        # Record interception outcome
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO engagement (
-                    target_missile_id, defense_missile_id, launch_installation_id,
-                    intercept_geom, intercept_altitude_m, status, intercept_distance_m
-                ) VALUES ($1, $2, 
-                    (SELECT id FROM installation WHERE callsign = $3),
-                    ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
-                    $6, 'intercepted', $7)
-            """, target_missile_id, defense_missile_id, defense_missile.callsign,
-                 defense_missile.position.x, defense_missile.position.y,
-                 defense_missile.position.z, 50)  # Approximate intercept distance
+                INSERT INTO missile_outcome (
+                    missile_id, callsign, missile_type, outcome_type, 
+                    outcome_location, outcome_altitude_m, blast_radius_m,
+                    target_achieved, intercepting_missile_id, notes
+                ) VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), $7, $8, $9, $10, $11)
+            """, 
+                target_missile_id, target_missile.callsign, 'attack', 'intercepted',
+                target_missile.position.x, target_missile.position.y, target_missile.position.z,
+                target_missile.blast_radius, False, defense_missile_id, "Successfully intercepted by defense missile"
+            )
+            
+            # Remove from active_missile table
+            await conn.execute("DELETE FROM active_missile WHERE id = $1", target_missile_id)
+        
+        print(f"Missile {target_missile.callsign} intercepted by defense missile {defense_missile_id}")
         
         # Remove from active missiles
-        del self.missiles[defense_missile_id]
         del self.missiles[target_missile_id]
-        ACTIVE_MISSILES.dec()
-        ACTIVE_MISSILES.dec()
         
-        INTERCEPTS.inc()
-        print(f"Intercept successful: {defense_missile.callsign} destroyed {target_missile.callsign}")
+        # Publish interception event
+        intercept_event = {
+            "type": "missile_intercepted",
+            "target_missile_id": target_missile_id,
+            "defense_missile_id": defense_missile_id,
+            "callsign": target_missile.callsign,
+            "position": {"x": target_missile.position.x, "y": target_missile.position.y, "z": target_missile.position.z},
+            "timestamp": time.time()
+        }
+        
+        await self.nats_client.publish("missile.intercepted", json.dumps(intercept_event).encode())
     
     async def check_detections(self):
         """Check for missile detections by radars and send events via NATS"""
@@ -559,7 +644,14 @@ class SimulationEngine:
     
     async def broadcast_missile_positions(self):
         """Broadcast missile positions to all subscribers"""
-        for missile_id, missile in self.missiles.items():
+        # Create a copy of missile IDs to avoid dictionary changed size during iteration
+        missile_ids = list(self.missiles.keys())
+        
+        for missile_id in missile_ids:
+            if missile_id not in self.missiles:
+                continue  # Missile was removed during iteration
+                
+            missile = self.missiles[missile_id]
             if missile.status != "active":
                 continue
             
@@ -666,7 +758,9 @@ class SimulationEngine:
                 target_lat=message["target_lat"],
                 target_lon=message["target_lon"],
                 target_alt=message["target_alt"],
-                missile_type=message.get("missile_type", "attack")
+                missile_type=message.get("missile_type", "attack"),
+                blast_radius=message.get("blast_radius"),
+                target_missile_id=message.get("target_missile_id")
             )
             print(f"Launched missile {missile_id}")
         except Exception as e:

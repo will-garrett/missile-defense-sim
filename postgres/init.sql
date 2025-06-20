@@ -156,6 +156,24 @@ CREATE TABLE simulation_config (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Missile outcome tracking
+CREATE TABLE missile_outcome (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    missile_id UUID NOT NULL,
+    callsign VARCHAR(100) NOT NULL,
+    missile_type VARCHAR(50) NOT NULL,
+    outcome_type VARCHAR(50) NOT NULL, -- 'detonated', 'intercepted', 'fuel_exhaustion', 'malfunction', 'ground_impact'
+    outcome_location GEOMETRY(POINT, 4326),
+    outcome_altitude_m DECIMAL(10,2),
+    outcome_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    blast_radius_m DECIMAL(10,2),
+    target_achieved BOOLEAN,
+    intercepting_missile_id UUID,
+    intercepting_battery_callsign VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Indexes for Performance ----------------------------------------------------
 CREATE INDEX idx_installation_geom ON installation USING GIST (geom);
 CREATE INDEX idx_installation_platform ON installation(platform_type_id);
@@ -166,48 +184,51 @@ CREATE INDEX idx_tracking_data_missile ON tracking_data(missile_id);
 CREATE INDEX idx_tracking_data_ts ON tracking_data(tracking_ts);
 CREATE INDEX idx_engagement_target ON engagement(target_missile_id);
 CREATE INDEX idx_engagement_status ON engagement(status);
+CREATE INDEX idx_missile_outcome_missile_id ON missile_outcome(missile_id);
+CREATE INDEX idx_missile_outcome_outcome_type ON missile_outcome(outcome_type);
+CREATE INDEX idx_missile_outcome_time ON missile_outcome(outcome_time);
 
 -- Seed Data: Comprehensive Military Systems from Major World Powers and Insurgency Groups
 
 -- Attack Platforms - United States
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('MGM-140 ATACMS', 'launch_platform', 'US Army Tactical Missile System', 0, 300000, 50000, 150, 230, 2000, 15.0, 450000),
-('MGM-31 Pershing II', 'launch_platform', 'US Army Medium-Range Ballistic Missile', 0, 1800000, 100000, 200, 1400, 3000, 12.0, 600000),
-('UGM-133 Trident II', 'launch_platform', 'US Navy Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 500, 2800, 12000, 20.0, 1200000),
-('AGM-158 JASSM', 'launch_platform', 'US Air Force Joint Air-to-Surface Standoff Missile', 0, 370000, 15000, 100, 450, 1500, 1.5, 300000);
+('MGM-140 ATACMS', 'launch_platform', 'US Army Tactical Missile System', 0, 300000, 50000, 200, 230, 2000, 15.0, 450000),
+('MGM-31 Pershing II', 'launch_platform', 'US Army Medium-Range Ballistic Missile', 0, 1800000, 100000, 350, 1400, 3000, 12.0, 600000),
+('UGM-133 Trident II', 'launch_platform', 'US Navy Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 800, 2800, 12000, 20.0, 1200000),
+('AGM-158 JASSM', 'launch_platform', 'US Air Force Joint Air-to-Surface Standoff Missile', 0, 370000, 15000, 150, 450, 1500, 1.5, 300000);
 
 -- Attack Platforms - Russia
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('9K720 Iskander-M', 'launch_platform', 'Russian Army Tactical Ballistic Missile System', 0, 500000, 100000, 200, 500, 3000, 15.0, 400000),
-('RT-2PM2 Topol-M', 'launch_platform', 'Russian Strategic Ballistic Missile', 0, 11000000, 1200000, 800, 1200, 5000, 18.0, 1000000),
-('R-29RMU2 Layner', 'launch_platform', 'Russian Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 600, 2800, 12000, 22.0, 1200000),
-('Kh-101', 'launch_platform', 'Russian Air-Launched Cruise Missile', 0, 5500000, 15000, 150, 400, 2000, 1.8, 350000);
+('9K720 Iskander-M', 'launch_platform', 'Russian Army Tactical Ballistic Missile System', 0, 500000, 100000, 250, 500, 3000, 15.0, 400000),
+('RT-2PM2 Topol-M', 'launch_platform', 'Russian Strategic Ballistic Missile', 0, 11000000, 1200000, 1000, 1200, 5000, 18.0, 1000000),
+('R-29RMU2 Layner', 'launch_platform', 'Russian Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 900, 2800, 12000, 22.0, 1200000),
+('Kh-101', 'launch_platform', 'Russian Air-Launched Cruise Missile', 0, 5500000, 15000, 200, 400, 2000, 1.8, 350000);
 
 -- Attack Platforms - China
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('DF-21D', 'launch_platform', 'Chinese Anti-Ship Ballistic Missile', 0, 1500000, 200000, 300, 800, 4000, 16.0, 600000),
-('DF-31AG', 'launch_platform', 'Chinese Road-Mobile ICBM', 0, 12000000, 1200000, 800, 1000, 5000, 20.0, 1000000),
-('JL-2', 'launch_platform', 'Chinese Submarine-Launched Ballistic Missile', 0, 8000000, 1000000, 500, 1000, 5000, 18.0, 800000),
-('CJ-10', 'launch_platform', 'Chinese Land-Attack Cruise Missile', 0, 2000000, 15000, 100, 500, 2000, 1.2, 400000);
+('DF-21D', 'launch_platform', 'Chinese Anti-Ship Ballistic Missile', 0, 1500000, 200000, 400, 800, 4000, 16.0, 600000),
+('DF-31AG', 'launch_platform', 'Chinese Road-Mobile ICBM', 0, 12000000, 1200000, 1000, 1000, 5000, 20.0, 1000000),
+('JL-2', 'launch_platform', 'Chinese Submarine-Launched Ballistic Missile', 0, 8000000, 1000000, 800, 1000, 5000, 18.0, 800000),
+('CJ-10', 'launch_platform', 'Chinese Land-Attack Cruise Missile', 0, 2000000, 15000, 150, 500, 2000, 1.2, 400000);
 
 -- Attack Platforms - North Korea
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('Hwasong-15', 'launch_platform', 'North Korean Intercontinental Ballistic Missile', 0, 13000000, 1200000, 800, 1000, 5000, 18.0, 1000000),
-('Hwasong-12', 'launch_platform', 'North Korean Intermediate-Range Ballistic Missile', 0, 4500000, 800000, 400, 650, 3500, 14.0, 700000),
-('Pukguksong-2', 'launch_platform', 'North Korean Submarine-Launched Ballistic Missile', 0, 1200000, 500000, 300, 500, 2500, 12.0, 500000);
+('Hwasong-15', 'launch_platform', 'North Korean Intercontinental Ballistic Missile', 0, 13000000, 1200000, 1000, 1000, 5000, 18.0, 1000000),
+('Hwasong-12', 'launch_platform', 'North Korean Intermediate-Range Ballistic Missile', 0, 4500000, 800000, 500, 650, 3500, 14.0, 700000),
+('Pukguksong-2', 'launch_platform', 'North Korean Submarine-Launched Ballistic Missile', 0, 1200000, 500000, 400, 500, 2500, 12.0, 500000);
 
 -- Attack Platforms - Iran
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('Shahab-3', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 1300000, 200000, 250, 750, 3500, 23.0, 500000),
-('Ghadr-110', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 2000000, 300000, 300, 800, 4000, 25.0, 600000),
-('Soumar', 'launch_platform', 'Iranian Land-Attack Cruise Missile', 0, 2500000, 15000, 100, 450, 2000, 3.2, 350000);
+('Shahab-3', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 1300000, 200000, 300, 750, 3500, 23.0, 500000),
+('Ghadr-110', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 2000000, 300000, 350, 800, 4000, 25.0, 600000),
+('Soumar', 'launch_platform', 'Iranian Land-Attack Cruise Missile', 0, 2500000, 15000, 150, 450, 2000, 3.2, 350000);
 
 -- Attack Platforms - Insurgency Groups
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
-('Qassam Rocket', 'launch_platform', 'Hamas Rocket Artillery', 0, 17000, 5000, 50, 5, 50, 2.0, 10000),
-('Grad Rocket', 'launch_platform', 'Insurgency Multiple Rocket Launcher', 0, 20000, 8000, 75, 20, 100, 3.0, 15000),
-('Fajr-5', 'launch_platform', 'Iranian-Backed Rocket Artillery', 0, 75000, 15000, 100, 90, 300, 5.0, 25000),
-('Katyusha Rocket', 'launch_platform', 'Soviet-Designed Rocket Artillery', 0, 20000, 8000, 60, 18, 80, 2.5, 12000);
+('Qassam Rocket', 'launch_platform', 'Hamas Rocket Artillery', 0, 17000, 5000, 30, 5, 50, 2.0, 10000),
+('Grad Rocket', 'launch_platform', 'Insurgency Multiple Rocket Launcher', 0, 20000, 8000, 50, 20, 100, 3.0, 15000),
+('Fajr-5', 'launch_platform', 'Iranian-Backed Rocket Artillery', 0, 75000, 15000, 80, 90, 300, 5.0, 25000),
+('Katyusha Rocket', 'launch_platform', 'Soviet-Designed Rocket Artillery', 0, 20000, 8000, 40, 18, 80, 2.5, 12000);
 
 -- Detection Systems - United States
 INSERT INTO platform_type (nickname, category, description, detection_range_m, sweep_rate_deg_per_sec, max_altitude_m) VALUES
@@ -247,44 +268,44 @@ INSERT INTO platform_type (nickname, category, description, detection_range_m, s
 
 -- Counter-Defense Systems - United States
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('Aegis BMD SM-3', 'counter_defense', 'US Navy Standard Missile 3', 3500, 2500000, 150000, 200, 30, 85),
-('THAAD System', 'counter_defense', 'US Army Terminal High Altitude Area Defense', 2800, 200000, 150000, 150, 45, 90),
-('Patriot PAC-3 MSE', 'counter_defense', 'US Army Patriot Advanced Capability', 1700, 100000, 80000, 100, 20, 95),
-('GMD System', 'counter_defense', 'US Ground-Based Midcourse Defense', 8000, 8000000, 2000000, 500, 300, 75),
-('Aegis BMD SM-6', 'counter_defense', 'US Navy Standard Missile 6', 3400, 2400000, 120000, 180, 35, 88);
+('Aegis BMD SM-3', 'counter_defense', 'US Navy Standard Missile 3', 3500, 2500000, 150000, 50, 30, 85),
+('THAAD System', 'counter_defense', 'US Army Terminal High Altitude Area Defense', 2800, 200000, 150000, 40, 45, 90),
+('Patriot PAC-3 MSE', 'counter_defense', 'US Army Patriot Advanced Capability', 1700, 100000, 80000, 30, 20, 95),
+('GMD System', 'counter_defense', 'US Ground-Based Midcourse Defense', 8000, 8000000, 2000000, 100, 300, 75),
+('Aegis BMD SM-6', 'counter_defense', 'US Navy Standard Missile 6', 3400, 2400000, 120000, 45, 35, 88);
 
 -- Counter-Defense Systems - Russia
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('S-400 Triumf', 'counter_defense', 'Russian Air Defense System', 4800, 400000, 30000, 120, 25, 92),
-('S-500 Prometheus', 'counter_defense', 'Russian Strategic Air Defense System', 7000, 600000, 200000, 300, 60, 85),
-('A-135 Amur', 'counter_defense', 'Russian Anti-Ballistic Missile System', 10000, 350000, 800000, 800, 120, 80),
-('S-300V4', 'counter_defense', 'Russian Army Air Defense System', 2800, 400000, 35000, 100, 30, 90);
+('S-400 Triumf', 'counter_defense', 'Russian Air Defense System', 4800, 400000, 30000, 35, 25, 92),
+('S-500 Prometheus', 'counter_defense', 'Russian Strategic Air Defense System', 7000, 600000, 200000, 60, 60, 85),
+('A-135 Amur', 'counter_defense', 'Russian Anti-Ballistic Missile System', 10000, 350000, 800000, 80, 120, 80),
+('S-300V4', 'counter_defense', 'Russian Army Air Defense System', 2800, 400000, 35000, 30, 30, 90);
 
 -- Counter-Defense Systems - China
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('HQ-9B', 'counter_defense', 'Chinese Air Defense System', 4200, 300000, 27000, 110, 28, 91),
-('HQ-19', 'counter_defense', 'Chinese Anti-Ballistic Missile System', 8000, 3000000, 1000000, 400, 90, 82),
-('HQ-26', 'counter_defense', 'Chinese Naval Air Defense System', 3600, 400000, 30000, 120, 32, 89),
-('HQ-29', 'counter_defense', 'Chinese Strategic Air Defense System', 6000, 500000, 150000, 250, 50, 87);
+('HQ-9B', 'counter_defense', 'Chinese Air Defense System', 4200, 300000, 27000, 35, 28, 91),
+('HQ-19', 'counter_defense', 'Chinese Anti-Ballistic Missile System', 8000, 3000000, 1000000, 70, 90, 82),
+('HQ-26', 'counter_defense', 'Chinese Naval Air Defense System', 3600, 400000, 30000, 40, 32, 89),
+('HQ-29', 'counter_defense', 'Chinese Strategic Air Defense System', 6000, 500000, 150000, 50, 50, 87);
 
 -- Counter-Defense Systems - NATO Allies
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('Aster 30', 'counter_defense', 'European Air Defense Missile', 1400, 120000, 20000, 80, 15, 96),
-('MEADS', 'counter_defense', 'US/German/Italian Air Defense System', 2400, 200000, 25000, 100, 22, 93),
-('NASAMS', 'counter_defense', 'Norwegian Advanced Surface-to-Air Missile', 1000, 25000, 14000, 60, 12, 97),
-('IRIS-T SLM', 'counter_defense', 'German Air Defense System', 3000, 40000, 20000, 70, 18, 94);
+('Aster 30', 'counter_defense', 'European Air Defense Missile', 1400, 120000, 20000, 25, 15, 96),
+('MEADS', 'counter_defense', 'US/German/Italian Air Defense System', 2400, 200000, 25000, 30, 22, 93),
+('NASAMS', 'counter_defense', 'Norwegian Advanced Surface-to-Air Missile', 1000, 25000, 14000, 20, 12, 97),
+('IRIS-T SLM', 'counter_defense', 'German Air Defense System', 3000, 40000, 20000, 25, 18, 94);
 
 -- Counter-Defense Systems - Israel
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('Iron Dome', 'counter_defense', 'Israeli Short-Range Air Defense', 300, 70000, 10000, 50, 8, 90),
-('David''s Sling', 'counter_defense', 'Israeli Medium-Range Air Defense', 2400, 300000, 15000, 80, 20, 92),
-('Arrow 3', 'counter_defense', 'Israeli Exo-Atmospheric Interceptor', 9000, 2400000, 100000, 300, 120, 85);
+('Iron Dome', 'counter_defense', 'Israeli Short-Range Air Defense', 300, 70000, 10000, 15, 8, 90),
+('David''s Sling', 'counter_defense', 'Israeli Medium-Range Air Defense', 2400, 300000, 15000, 25, 20, 92),
+('Arrow 3', 'counter_defense', 'Israeli Exo-Atmospheric Interceptor', 9000, 2400000, 100000, 60, 120, 85);
 
 -- Counter-Defense Systems - India
 INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, reload_time_sec, accuracy_percent) VALUES
-('Akash', 'counter_defense', 'Indian Medium-Range Air Defense', 850, 30000, 18000, 60, 15, 88),
-('Barak 8', 'counter_defense', 'Indian-Israeli Air Defense System', 2000, 100000, 16000, 70, 25, 90),
-('Prithvi Air Defense', 'counter_defense', 'Indian Exo-Atmospheric Interceptor', 5000, 2000000, 80000, 200, 90, 80);
+('Akash', 'counter_defense', 'Indian Medium-Range Air Defense', 850, 30000, 18000, 20, 15, 88),
+('Barak 8', 'counter_defense', 'Indian-Israeli Air Defense System', 2000, 100000, 16000, 25, 25, 90),
+('Prithvi Air Defense', 'counter_defense', 'Indian Exo-Atmospheric Interceptor', 5000, 2000000, 80000, 40, 90, 80);
 
 -- Simulation Configuration
 INSERT INTO simulation_config (config_key, config_value, description) VALUES

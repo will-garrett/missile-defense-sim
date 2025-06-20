@@ -47,7 +47,7 @@ class BatteryMessagingService:
                         accuracy_percent=85,
                         reload_time_sec=30,
                         max_speed_mps=3500,
-                        blast_radius_m=200
+                        blast_radius_m=50  # Defense missiles have blast radius for intercept detonation
                     ),
                     10
                 )
