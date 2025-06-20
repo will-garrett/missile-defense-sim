@@ -20,14 +20,33 @@ from api import BatterySimAPI
 from messaging import BatteryMessagingService
 from battery_logic import BatteryLogic
 
-# Prometheus metrics
+# Prometheus metrics server
 start_http_server(8000)
 
-# New position and event metrics
-BATTERY_POSITION = Gauge("battery_position", "Current position of each battery installation",
-                        ["battery_callsign", "status"])
-BATTERY_ENGAGEMENT_EVENT = Counter("battery_engagement_event", "Battery engagement event positions",
-                                  ["battery_callsign", "target_missile_id", "timestamp"])
+# Global metrics (created only once)
+_battery_position = None
+_battery_engagement_event = None
+_metrics_initialized = False
+
+def _ensure_metrics_initialized():
+    """Ensure Prometheus metrics are initialized only once"""
+    global _battery_position, _battery_engagement_event, _metrics_initialized
+    
+    if not _metrics_initialized:
+        try:
+            _battery_position = Gauge("battery_position", "Current position of each battery installation",
+                                    ["battery_callsign", "status"])
+            _battery_engagement_event = Counter("battery_engagement_event", "Battery engagement event positions",
+                                              ["battery_callsign", "target_missile_id", "timestamp"])
+            _metrics_initialized = True
+        except ValueError as e:
+            # Metrics already exist, try to get them from registry
+            print(f"Metrics already registered: {e}")
+            from prometheus_client import REGISTRY
+            # We'll handle this case by setting them to None and checking before use
+            _battery_position = None
+            _battery_engagement_event = None
+            _metrics_initialized = True
 
 @dataclass
 class BatteryCapability:
@@ -58,6 +77,9 @@ class BatterySim:
         self.pending_engagements: List[EngagementOrder] = []
         self.current_engagement: Optional[EngagementOrder] = None
         
+        # Ensure metrics are initialized
+        _ensure_metrics_initialized()
+    
     async def initialize(self):
         """Initialize database connection and NATS"""
         # Database
@@ -104,9 +126,9 @@ class BatterySim:
                 
                 # Update Prometheus metrics for battery position
                 battery_pos = await self.get_battery_position()
-                if battery_pos:
+                if battery_pos and _battery_position is not None:
                     position_value = battery_pos['lat'] * 1000000 + (battery_pos['lon'] + 180) * 1000
-                    BATTERY_POSITION.labels(
+                    _battery_position.labels(
                         battery_callsign=self.callsign,
                         status=self.status
                     ).set(position_value)
@@ -315,12 +337,13 @@ class BatterySim:
     async def record_engagement_attempt(self, order: EngagementOrder, missile_id: str):
         """Record engagement attempt in database"""
         # Update Prometheus metrics for battery engagement event position
-        position_value = order.intercept_point['lat'] * 1000000 + (order.intercept_point['lon'] + 180) * 1000
-        BATTERY_ENGAGEMENT_EVENT.labels(
-            battery_callsign=self.callsign,
-            target_missile_id=order.target_missile_id,
-            timestamp=str(int(order.timestamp))
-        ).inc()
+        if _battery_engagement_event is not None:
+            position_value = order.intercept_point['lat'] * 1000000 + (order.intercept_point['lon'] + 180) * 1000
+            _battery_engagement_event.labels(
+                battery_callsign=self.callsign,
+                target_missile_id=order.target_missile_id,
+                timestamp=str(int(order.timestamp))
+            ).inc()
         
         async with self.db_pool.acquire() as conn:
             # Get attempt number
