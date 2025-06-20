@@ -1,0 +1,149 @@
+services:
+# Infrastructure
+  nats:
+    image: nats:latest
+    ports: [ "4222:4222" ]
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: missilesim
+      POSTGRES_USER: missiles
+      POSTGRES_PASSWORD: missiles
+    volumes:
+      - ./_data/postgres:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
+    ports: [ "5432:5432" ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U missiles -d missilesim"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: [ "9090:9090" ]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment: [ GF_SECURITY_ADMIN_PASSWORD=admin ]
+    ports: [ "3000:3000" ]
+    volumes:
+      - ./_data/grafana:/var/lib/grafana
+
+# Applications
+  api_launcher:
+    build: ./api_launcher
+    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    ports:
+      - "9000:9000"   # REST
+      - "8003:8000"   # /metrics
+
+  track_sim:
+    build: ./track_sim
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      api_launcher:
+        condition: service_started
+    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
+    ports: [ "5556:5556", "8004:8000" ]
+
+  radar_site:
+    build: ./radar_site
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      track_sim:
+        condition: service_started
+      nats:
+        condition: service_started
+    environment:
+      - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
+      - CALL_SIGN=${RADAR_CALL_SIGN:-RAD_VBG}
+    deploy:                        # spin up 3 radar replicas
+      replicas: 3
+    # ports: [ "0" ]                 # internal only; metrics scraped by service-discovery
+
+  command_center:
+    build: ./command_center
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment: [ DB_DSN=postgresql://missiles:missiles@postgres/missilesim ]
+    ports: [ "8005:8000" ]
+
+  battery_sim:
+    build: ./battery_sim
+    depends_on: 
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
+      - CALL_SIGN=${BATTERY_CALL_SIGN:-BAT_LA}
+    ports: [ "8006:8000" ]
+
+  interceptor_sim:
+    build: ./interceptor_sim
+    depends_on: 
+      nats:
+        condition: service_started
+    ports: [ "8007:8000" ]
+
+# Load‑testing (master / workers pattern)
+  locust-master:
+    build: ./locust          # same custom image with extra deps
+    working_dir: /mnt/locust
+    volumes:
+      - ./locust:/mnt/locust
+    environment:
+      - LOCUST_HOST=http://api_launcher:9000
+      - LOCUST_MODE=master
+      - LOCUST_WEB_HOST=0.0.0.0
+      - LOCUST_WEB_PORT=8089
+    depends_on:
+      api_launcher:
+        condition: service_started
+    ports:
+      - "8089:8089"          # Web UI
+
+  locust-worker:
+    build: ./locust          # reuse the same Dockerfile
+    working_dir: /mnt/locust
+    volumes:
+      - ./locust:/mnt/locust
+    environment:
+      - LOCUST_HOST=http://api_launcher:9000
+      - LOCUST_MODE=worker
+      - LOCUST_MASTER_HOST=locust-master
+      - LOCUST_MASTER_PORT=5557
+    depends_on:
+      locust-master:
+        condition: service_started
+    deploy:
+      replicas: 3            # spin up 3 workers (adjust as needed)
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@missilesim.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - ./_data/pgadmin:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    depends_on:
+      postgres:
+        condition: service_healthy

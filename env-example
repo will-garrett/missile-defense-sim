@@ -1,0 +1,8 @@
+# Missile Defense System Environment Variables
+# Copy this to .env and modify as needed
+
+# Radar configuration
+RADAR_CALL_SIGN=RAD_VBG
+
+# Battery configuration  
+BATTERY_CALL_SIGN=BAT_LA

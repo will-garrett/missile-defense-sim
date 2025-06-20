@@ -1,0 +1,5 @@
+asyncpg
+nats-py
+pyzmq
+prometheus-client
+python-dateutil

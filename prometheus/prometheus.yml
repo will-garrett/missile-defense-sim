@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # --- Missile attack chain ------------------------------
+  - job_name: api_launcher
+    static_configs:
+      - targets: ['api_launcher:8000']
+
+  - job_name: track_sim
+    static_configs:
+      - targets: ['track_sim:8000']
+
+  # --- Defender chain ------------------------------------
+  - job_name: command_center
+    static_configs:
+      - targets: ['command_center:8000']
+
+  - job_name: battery_sim
+    static_configs:
+      - targets: ['battery_sim:8000']
+
+  - job_name: interceptor_sim
+    static_configs:
+      - targets: ['interceptor_sim:8000']
+
+  # Radar replicas discovered via DNS
+  - job_name: radar_site
+    dns_sd_configs:
+      - names: ['radar_site']
+        port: 8000
