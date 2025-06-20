@@ -65,6 +65,7 @@ class MissileState:
     thrust: float
     drag_coefficient: float
     cross_sectional_area: float
+    fuel_consumption_rate: float  # kg/s
     target_position: Optional[Vector3D] = None
     missile_type: str = "attack"
     target_missile_id: Optional[str] = None
@@ -86,70 +87,152 @@ class PhysicsEngine:
         """Calculate gravitational acceleration at given altitude"""
         return self.gravity * (self.earth_radius / (self.earth_radius + altitude))**2
     
-    def calculate_drag_force(self, velocity: Vector3D, altitude: float, drag_coeff: float, area: float) -> Vector3D:
-        """Calculate drag force based on velocity, altitude, and missile characteristics"""
-        air_density = self.get_air_density(altitude)
-        speed = velocity.magnitude()
-        drag_force_magnitude = 0.5 * air_density * speed**2 * drag_coeff * area
+    def calculate_drag_force(self, velocity: Vector3D, altitude: float, drag_coeff: float, area: float, fluid_density: float = None) -> Vector3D:
+        """Calculate drag force on missile"""
+        # Use provided fluid density or calculate air density
+        if fluid_density is None:
+            fluid_density = self.get_air_density(altitude)
         
-        if speed > 0:
-            drag_direction = Vector3D(-velocity.x/speed, -velocity.y/speed, -velocity.z/speed)
-            return drag_direction * drag_force_magnitude
-        return Vector3D(0, 0, 0)
+        # Drag force = 0.5 * ρ * v² * Cd * A
+        velocity_magnitude = velocity.magnitude()
+        drag_magnitude = 0.5 * fluid_density * velocity_magnitude**2 * drag_coeff * area
+        
+        # Drag acts opposite to velocity direction
+        if velocity_magnitude > 0:
+            drag_direction = Vector3D(-velocity.x, -velocity.y, -velocity.z).normalize()
+        else:
+            drag_direction = Vector3D(0, 0, 0)
+        
+        return drag_direction * drag_magnitude
     
     def calculate_thrust_force(self, thrust: float, direction: Vector3D) -> Vector3D:
         """Calculate thrust force in given direction"""
         return direction * thrust
     
+    def get_water_density(self, depth: float) -> float:
+        """Get water density at given depth (kg/m³)"""
+        # Seawater density increases with depth due to pressure
+        # Surface: ~1025 kg/m³, increases by ~1 kg/m³ per 100m depth
+        surface_density = 1025.0  # kg/m³
+        depth_factor = 1.0 + (abs(depth) / 10000.0)  # Small increase with depth
+        return surface_density * depth_factor
+    
+    def get_water_drag_coefficient(self, velocity: float) -> float:
+        """Get water drag coefficient based on velocity"""
+        # Water drag is much higher than air drag
+        # Submarine torpedoes: ~0.3-0.5, missiles: ~0.2-0.4
+        base_drag = 0.35
+        # Increase drag at higher velocities due to cavitation
+        if velocity > 50:  # m/s
+            base_drag *= 1.2
+        return base_drag
+    
     def missile_dynamics(self, t: float, state: List[float], missile: MissileState) -> List[float]:
-        """Differential equations for missile flight dynamics"""
+        """Differential equations for missile flight dynamics with realistic parabolic trajectories"""
         x, y, z, vx, vy, vz = state
         
         position = Vector3D(x, y, z)
         velocity = Vector3D(vx, vy, vz)
         altitude = z
+        velocity_magnitude = velocity.magnitude()
+        
+        # Determine environment (underwater vs air)
+        is_underwater = altitude < 0
         
         # Gravity
         gravity = self.get_gravity(altitude)
         gravity_force = Vector3D(0, 0, -gravity * missile.mass)
         
-        # Drag
-        drag_force = self.calculate_drag_force(velocity, altitude, missile.drag_coefficient, missile.cross_sectional_area)
+        # Drag force (different for water vs air)
+        if is_underwater:
+            # Underwater drag
+            water_density = self.get_water_density(altitude)
+            water_drag_coeff = self.get_water_drag_coefficient(velocity_magnitude)
+            drag_force = self.calculate_drag_force(velocity, altitude, water_drag_coeff, missile.cross_sectional_area, water_density)
+        else:
+            # Air drag
+            drag_force = self.calculate_drag_force(velocity, altitude, missile.drag_coefficient, missile.cross_sectional_area)
         
         # Thrust (if fuel available and missile is active)
         thrust_force = Vector3D(0, 0, 0)
         if missile.fuel_remaining > 0 and missile.status == "active":
             if missile.missile_type == "attack":
-                # Attack missiles: thrust upward initially, then toward target
-                if altitude < 10000:  # Initial boost phase
-                    thrust_direction = Vector3D(0, 0, 1)
-                else:
-                    # Mid-course: thrust toward target
-                    if missile.target_position:
-                        direction_to_target = missile.target_position - position
-                        thrust_direction = direction_to_target.normalize()
+                # Realistic ballistic missile trajectory phases
+                if is_underwater:
+                    # Phase 1: Underwater boost (first 2-3 seconds)
+                    if t < 3.0:  # First 3 seconds underwater
+                        thrust_direction = Vector3D(0, 0, 1)  # Primarily upward
+                        thrust_magnitude = missile.thrust * 0.5  # Reduced thrust underwater
                     else:
+                        # Phase 2: Transition to main propulsion
+                        thrust_direction = Vector3D(0, 0, 1)  # Continue upward
+                        thrust_magnitude = missile.thrust * 0.9  # Increased thrust
+                else:
+                    # Phase 3: Airborne flight - realistic ballistic trajectory
+                    if altitude < 1000:  # Initial boost phase
+                        # Continue upward boost for first 1km
                         thrust_direction = Vector3D(0, 0, 1)
+                        thrust_magnitude = missile.thrust
+                    elif altitude < 50000:  # Mid-course phase - create parabolic arc
+                        # Calculate optimal trajectory to target
+                        if missile.target_position:
+                            # Calculate required velocity for ballistic trajectory
+                            target_pos = missile.target_position
+                            dx = target_pos.x - position.x
+                            dy = target_pos.y - position.y
+                            dz = target_pos.z - position.z
+                            
+                            # Calculate horizontal distance
+                            horizontal_distance = math.sqrt(dx*dx + dy*dy)
+                            
+                            # For ballistic trajectory, we need to calculate optimal angle
+                            # This is a simplified ballistic calculation
+                            if horizontal_distance > 0:
+                                # Calculate required velocity for ballistic trajectory
+                                # Using simplified ballistic equations
+                                g = gravity
+                                # Optimal angle for maximum range is 45 degrees
+                                # But we'll use a more realistic angle based on distance
+                                optimal_angle = min(60, max(30, math.degrees(math.atan2(abs(dz), horizontal_distance))))
+                                
+                                # Calculate thrust direction based on optimal trajectory
+                                horizontal_direction = Vector3D(dx/horizontal_distance, dy/horizontal_distance, 0)
+                                vertical_component = math.sin(math.radians(optimal_angle))
+                                horizontal_component = math.cos(math.radians(optimal_angle))
+                                
+                                thrust_direction = (horizontal_direction * horizontal_component + Vector3D(0, 0, vertical_component)).normalize()
+                            else:
+                                thrust_direction = Vector3D(0, 0, 1)
+                        else:
+                            thrust_direction = Vector3D(0, 0, 1)
+                        thrust_magnitude = missile.thrust * 0.8
+                    else:  # Terminal phase - ballistic descent
+                        # Missile is in ballistic descent, minimal thrust
+                        thrust_magnitude = 0  # No thrust in terminal phase
+                        thrust_direction = Vector3D(0, 0, 0)
             else:
                 # Defense missiles: thrust toward target missile
                 thrust_direction = Vector3D(0, 0, 1)  # Simplified for now
+                thrust_magnitude = missile.thrust
             
-            thrust_force = self.calculate_thrust_force(missile.thrust, thrust_direction)
-            
-            # Fuel consumption
-            fuel_consumption_rate = missile.thrust / 3000  # kg/s (simplified)
-            missile.fuel_remaining = max(0, missile.fuel_remaining - fuel_consumption_rate * 0.1)  # 0.1s timestep
+            thrust_force = self.calculate_thrust_force(thrust_magnitude, thrust_direction)
         
-        # Total force
-        total_force = gravity_force + drag_force + thrust_force
+        # Buoyancy force (only underwater)
+        buoyancy_force = Vector3D(0, 0, 0)
+        if is_underwater:
+            # Buoyancy = ρ_water * V * g
+            water_density = self.get_water_density(altitude)
+            missile_volume = missile.mass / 1000.0  # Rough estimate: 1kg ≈ 1L
+            buoyancy_magnitude = water_density * missile_volume * gravity
+            buoyancy_force = Vector3D(0, 0, buoyancy_magnitude)
         
-        # Acceleration
-        acceleration = Vector3D(
-            total_force.x / missile.mass,
-            total_force.y / missile.mass,
-            total_force.z / missile.mass
-        )
+        # Net force
+        net_force = gravity_force + drag_force + thrust_force + buoyancy_force
         
+        # Acceleration = F/m
+        acceleration = net_force * (1.0 / missile.mass)
+        
+        # Return derivatives: [dx/dt, dy/dt, dz/dt, dvx/dt, dvy/dt, dvz/dt]
         return [vx, vy, vz, acceleration.x, acceleration.y, acceleration.z]
 
 class SimulationEngine:
@@ -165,6 +248,7 @@ class SimulationEngine:
         self.installations: Dict[str, Dict] = {}
         self.simulation_config: Dict = {}
         self.simulation_tick_ms = 100  # 100ms simulation tick
+        self.detected_missiles = {}  # {radar_callsign: set(missile_ids)}
         
         # Bind ZMQ sockets
         self.zmq_pub.bind("tcp://0.0.0.0:5555")
@@ -176,11 +260,11 @@ class SimulationEngine:
         await self.load_simulation_config()
         await self.load_installations()
         
-        # Subscribe to NATS messages
+        # Subscribe to NATS topics
         await self.nats_client.subscribe("simulation.launch", cb=self.handle_nats_message)
-        print("Subscribed to simulation.launch NATS topic")
+        await self.nats_client.subscribe("radar.detection_areas", cb=self.handle_radar_detection_areas)
         
-        print("Simulation engine initialized")
+        print("Simulation engine initialized and subscribed to NATS topics")
     
     async def load_simulation_config(self):
         """Load simulation configuration from database"""
@@ -232,42 +316,55 @@ class SimulationEngine:
         """Create a new missile in the simulation"""
         missile_id = str(uuid.uuid4())
         
-        # Get platform characteristics
+        # Get platform characteristics from database
         async with self.db_pool.acquire() as conn:
             platform = await conn.fetchrow("""
-                SELECT max_speed_mps, max_range_m, max_altitude_m, blast_radius_m
+                SELECT max_speed_mps, max_range_m, max_altitude_m, blast_radius_m,
+                       fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n, nickname
                 FROM platform_type WHERE nickname = $1
             """, platform_nickname)
             
             if not platform:
                 raise ValueError(f"Platform {platform_nickname} not found")
         
-        # Calculate initial velocity toward target
-        initial_speed = min(float(platform['max_speed_mps']), 1000.0)  # m/s
-        
-        # Calculate direction to target
-        target_pos = Vector3D(float(target_lon), float(target_lat), float(target_alt))
-        launch_pos = Vector3D(float(launch_lon), float(launch_lat), float(launch_alt))
-        direction_to_target = target_pos - launch_pos
-        
-        # Normalize and apply initial speed
-        if direction_to_target.magnitude() > 0:
-            initial_velocity = direction_to_target.normalize() * initial_speed
+        # Use realistic values for JL-2 and similar SLBMs
+        if platform_nickname in ["JL-2", "UGM-133 Trident II"]:
+            missile_mass = 42000.0  # kg
+            missile_thrust = 600000.0  # N
+            missile_drag_coeff = 0.25
+            missile_area = 3.14  # m² (2m diameter)
         else:
-            # Fallback: upward velocity if target is at same position
-            initial_velocity = Vector3D(0, 0, initial_speed)
+            missile_mass = 1000.0  # Default mass in kg
+            missile_thrust = float(platform['thrust_n']) if platform['thrust_n'] else 50000.0
+            missile_drag_coeff = 0.3
+            missile_area = 0.1  # m²
+        missile_fuel = float(platform['fuel_capacity_kg']) if platform['fuel_capacity_kg'] else 1000.0
+        missile_fuel_consumption_rate = float(platform['fuel_consumption_rate_kgps']) if platform['fuel_consumption_rate_kgps'] else 50.0
         
-        # Create missile state
+        # Calculate initial velocity for underwater launch
+        initial_speed = min(float(platform['max_speed_mps']), 1000.0)
+        if launch_alt < 0:  # Underwater launch
+            initial_velocity = Vector3D(0, 0, 50.0)  # 50 m/s upward initially
+        else:
+            target_pos = Vector3D(float(target_lon), float(target_lat), float(target_alt))
+            launch_pos = Vector3D(float(launch_lon), float(launch_lat), float(launch_alt))
+            direction_to_target = target_pos - launch_pos
+            if direction_to_target.magnitude() > 0:
+                initial_velocity = direction_to_target.normalize() * initial_speed
+            else:
+                initial_velocity = Vector3D(0, 0, initial_speed)
+        
         missile = MissileState(
             id=missile_id,
             callsign=f"{launch_callsign}_{missile_id[:8]}",
             position=Vector3D(launch_lon, launch_lat, launch_alt),
             velocity=initial_velocity,
-            fuel_remaining=1000.0,  # kg
-            mass=1000.0,  # kg
-            thrust=50000.0,  # N
-            drag_coefficient=0.3,
-            cross_sectional_area=0.1,  # m²
+            fuel_remaining=missile_fuel,
+            mass=missile_mass,
+            thrust=missile_thrust,
+            drag_coefficient=missile_drag_coeff,
+            cross_sectional_area=missile_area,
+            fuel_consumption_rate=missile_fuel_consumption_rate,
             target_position=Vector3D(target_lon, target_lat, target_alt),
             missile_type=missile_type,
             launch_time=time.time()
@@ -301,29 +398,81 @@ class SimulationEngine:
     async def update_missile_physics(self, missile_id: str, dt: float):
         """Update missile physics for one timestep"""
         missile = self.missiles[missile_id]
-        if missile.status != "active":
-            return
         
-        with PHYSICS_CALC_TIME.time():
-            # Current state
-            state = [
-                missile.position.x, missile.position.y, missile.position.z,
-                missile.velocity.x, missile.velocity.y, missile.velocity.z
-            ]
-            
-            # Solve differential equations
-            solution = solve_ivp(
-                lambda t, y: self.physics_engine.missile_dynamics(t, y, missile),
-                [0, dt], state, method='RK45', t_eval=[dt]
+        # Initialize launch time if not set
+        if missile.launch_time == 0:
+            missile.launch_time = time.time()
+            print(f"DEBUG: Missile {missile.callsign} starting physics at position {missile.position}, velocity {missile.velocity}")
+        
+        # Get current state
+        state = [missile.position.x, missile.position.y, missile.position.z,
+                missile.velocity.x, missile.velocity.y, missile.velocity.z]
+        
+        # Calculate derivatives using physics engine
+        derivatives = self.physics_engine.missile_dynamics(time.time() - missile.launch_time, state, missile)
+        
+        # Update position and velocity using simple Euler integration
+        missile.position.x += derivatives[0] * dt
+        missile.position.y += derivatives[1] * dt
+        missile.position.z += derivatives[2] * dt
+        missile.velocity.x = derivatives[3]
+        missile.velocity.y = derivatives[4]
+        missile.velocity.z = derivatives[5]
+        
+        # Consume fuel based on thrust usage
+        if missile.fuel_remaining > 0 and missile.status == "active":
+            current_thrust_ratio = 1.0
+            if missile.position.z < 0:
+                if time.time() - missile.launch_time < 3.0:
+                    current_thrust_ratio = 0.5
+                else:
+                    current_thrust_ratio = 0.9
+            else:
+                if missile.position.z < 1000:
+                    current_thrust_ratio = 1.0
+                elif missile.position.z < 10000:
+                    current_thrust_ratio = 0.9
+                else:
+                    current_thrust_ratio = 0.7
+            fuel_consumed = missile.fuel_consumption_rate * current_thrust_ratio * dt
+            missile.fuel_remaining = max(0, missile.fuel_remaining - fuel_consumed)
+        
+        if int(time.time() - missile.launch_time) % 10 == 0 and int(time.time() - missile.launch_time) > 0:
+            print(f"DEBUG: Missile {missile.callsign} at t={time.time() - missile.launch_time:.1f}s: pos={missile.position}, vel={missile.velocity}, fuel={missile.fuel_remaining:.1f}kg")
+        
+        # Check for impact or fuel exhaustion
+        if missile.fuel_remaining <= 0:
+            print(f"DEBUG: Missile {missile.callsign} ran out of fuel at position {missile.position}")
+            await self.handle_missile_impact(missile_id)
+        elif missile.position.z <= -300 and missile.velocity.z < 0:
+            # Missile hit seabed, detonate
+            print(f"DEBUG: Missile {missile.callsign} hit seabed at position {missile.position}")
+            await self.handle_missile_impact(missile_id)
+        elif missile.position.z <= 0 and missile.velocity.z < 0 and missile.position.z > -300:
+            # Missile hit water surface, but do not detonate, allow to continue
+            pass
+        elif missile.target_position and missile.position.z > 0:
+            distance_to_target = (missile.position - missile.target_position).magnitude()
+            blast_radius = 200.0
+            if missile.missile_type == "attack":
+                async with self.db_pool.acquire() as conn:
+                    platform_blast_radius = await conn.fetchval("""
+                        SELECT pt.blast_radius_m 
+                        FROM platform_type pt 
+                        JOIN active_missile am ON pt.id = am.platform_type_id 
+                        WHERE am.id = $1
+                    """, missile_id)
+                    if platform_blast_radius:
+                        blast_radius = float(platform_blast_radius)
+            target_horizontal_distance = math.sqrt(
+                (missile.position.x - missile.target_position.x)**2 + 
+                (missile.position.y - missile.target_position.y)**2
             )
-            
-            # Update missile state
-            new_state = solution.y.flatten()
-            missile.position = Vector3D(new_state[0], new_state[1], new_state[2])
-            missile.velocity = Vector3D(new_state[3], new_state[4], new_state[5])
-            
-            # Check for impact or fuel exhaustion
-            if missile.position.z <= 0 or missile.fuel_remaining <= 0:
+            is_above_target = missile.position.z > missile.target_position.z
+            is_within_blast_radius = target_horizontal_distance <= blast_radius
+            is_descending = missile.velocity.z < 0
+            if is_above_target and is_within_blast_radius and is_descending:
+                print(f"DEBUG: Missile {missile.callsign} detonating above target at position {missile.position} (blast radius: {blast_radius}m)")
                 await self.handle_missile_impact(missile_id)
     
     async def handle_missile_impact(self, missile_id: str):
@@ -379,66 +528,34 @@ class SimulationEngine:
         print(f"Intercept successful: {defense_missile.callsign} destroyed {target_missile.callsign}")
     
     async def check_detections(self):
-        """Check for missile detections by radar installations"""
-        for installation_callsign, installation in self.installations.items():
-            if installation['category'] != 'detection_system':
+        """Check for missile detections by radars and send events via NATS"""
+        for radar_callsign, radar in self.installations.items():
+            if radar['category'] != 'detection_system':
                 continue
-            
-            # Get detection range and update interval
-            detection_range = installation.get('detection_range_m', 100000)
-            update_interval = int(self.simulation_config.get('radar_update_interval_ms', '1000'))
-            
-            # Check if it's time for this radar to update
-            current_time = time.time() * 1000  # Convert to milliseconds
-            if int(current_time) % update_interval != 0:
-                continue
-            
-            # Check each active missile
+            detection_range = float(radar['detection_range_m'])
+            radar_pos = Vector3D(float(radar['lon']), float(radar['lat']), float(radar['altitude_m']))
+            detected_set = self.detected_missiles.setdefault(radar_callsign, set())
             for missile_id, missile in self.missiles.items():
-                if missile.missile_type != "attack":
+                if missile.status != 'active':
                     continue
-                
-                # Calculate distance to missile
-                radar_pos = Vector3D(
-                    installation['lon'],
-                    installation['lat'],
-                    installation['altitude_m']
-                )
-                
-                distance = (missile.position - radar_pos).magnitude()
-                
-                if distance <= detection_range:
-                    # Create detection event
-                    await self.create_detection_event(installation_callsign, missile_id, missile.position)
-    
-    async def create_detection_event(self, radar_callsign: str, missile_id: str, position: Vector3D):
-        """Create a radar detection event"""
-        async with self.db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO detection_event (
-                    detection_installation_id, detected_missile_id,
-                    detection_geom, detection_altitude_m, detection_ts,
-                    signal_strength_db, confidence_percent
-                ) VALUES (
-                    (SELECT id FROM installation WHERE callsign = $1),
-                    $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography,
-                    $5, NOW(), $6, $7
-                )
-            """, radar_callsign, missile_id, position.x, position.y, position.z,
-                 -50, 85)  # Typical radar signal strength and confidence
-        
-        DETECTION_EVENTS.inc()
-        
-        # Notify command center via NATS
-        await self.nats_client.publish(
-            "radar.detection",
-            json.dumps({
-                "radar_callsign": radar_callsign,
-                "missile_id": missile_id,
-                "position": {"x": position.x, "y": position.y, "z": position.z},
-                "timestamp": time.time()
-            }).encode()
-        )
+                # Calculate distance (simple Euclidean for now)
+                dx = missile.position.x - radar_pos.x
+                dy = missile.position.y - radar_pos.y
+                dz = missile.position.z - radar_pos.z
+                dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+                if dist <= detection_range and missile_id not in detected_set:
+                    # New detection
+                    detected_set.add(missile_id)
+                    detection_event = {
+                        'radar_callsign': radar_callsign,
+                        'missile_id': missile_id,
+                        'missile_position': {'x': missile.position.x, 'y': missile.position.y, 'z': missile.position.z},
+                        'timestamp': time.time(),
+                        'signal_strength_db': 100,  # Placeholder
+                        'confidence_percent': 95    # Placeholder
+                    }
+                    await self.nats_client.publish('detection.event', json.dumps(detection_event).encode())
+                    print(f"Detection: Radar {radar_callsign} detected missile {missile_id} at {missile.position}")
     
     async def broadcast_missile_positions(self):
         """Broadcast missile positions to all subscribers"""
@@ -572,4 +689,29 @@ class SimulationEngine:
             message = json.loads(msg.data.decode())
             await self.handle_message(message)
         except Exception as e:
-            print(f"Error handling NATS message: {e}") 
+            print(f"Error handling NATS message: {e}")
+    
+    async def handle_radar_detection_areas(self, msg):
+        """Handle incoming radar detection areas from radar service"""
+        try:
+            data = json.loads(msg.data.decode())
+            if data.get('type') == 'detection_areas_update':
+                radars = data.get('radars', [])
+                
+                # Update radar installations with detection area information
+                for radar_data in radars:
+                    radar_callsign = radar_data['radar_callsign']
+                    if radar_callsign in self.installations:
+                        # Update the installation with radar-specific data
+                        self.installations[radar_callsign].update({
+                            'detection_range_m': radar_data['detection_range_m'],
+                            'max_altitude_m': radar_data['max_altitude_m'],
+                            'sweep_rate_deg_per_sec': radar_data['sweep_rate_deg_per_sec'],
+                            'update_interval_ms': radar_data['update_interval_ms'],
+                            'radar_status': radar_data['status']
+                        })
+                
+                print(f"Updated detection areas for {len(radars)} radars")
+                
+        except Exception as e:
+            print(f"Error handling radar detection areas: {e}") 

@@ -73,8 +73,15 @@ class RadarLogic:
         # Subscribe to missile position updates
         await self.nats_client.subscribe("missile.position", cb=self.handle_missile_position)
         
+        # Subscribe to detection events
+        await self.nats_client.subscribe('detection.event', cb=self.handle_detection_event)
+        print('Subscribed to detection.event NATS topic')
+        
         # Load all radar installations
         await self.load_radar_installations()
+        
+        # Publish detection area updates to simulation service
+        await self.publish_detection_areas()
         
         print(f"Radar logic initialized with {len(self.radar_installations)} installations")
     
@@ -395,4 +402,52 @@ class RadarLogic:
                 
             except Exception as e:
                 print(f"Error in radar service loop: {e}")
-                await asyncio.sleep(1.0) 
+                await asyncio.sleep(1.0)
+
+    async def handle_detection_event(self, msg):
+        data = json.loads(msg.data.decode())
+        print(f"Radar received detection event: {data}")
+        # Further processing can be added here
+    
+    async def publish_detection_areas(self):
+        """Publish detection area information to simulation service"""
+        try:
+            detection_areas = []
+            
+            for callsign, installation in self.radar_installations.items():
+                lat, lon, alt = installation.position
+                capability = installation.capability
+                
+                detection_area = {
+                    "radar_callsign": callsign,
+                    "position": {
+                        "lat": lat,
+                        "lon": lon,
+                        "altitude_m": alt
+                    },
+                    "detection_range_m": capability.detection_range_m,
+                    "max_altitude_m": capability.max_altitude_m,
+                    "sweep_rate_deg_per_sec": capability.sweep_rate_deg_per_sec,
+                    "update_interval_ms": capability.update_interval_ms,
+                    "status": installation.status,
+                    "timestamp": time.time()
+                }
+                detection_areas.append(detection_area)
+            
+            # Publish detection areas to simulation service
+            message = {
+                "type": "detection_areas_update",
+                "radars": detection_areas,
+                "timestamp": time.time()
+            }
+            
+            await self.nats_client.publish("radar.detection_areas", json.dumps(message).encode())
+            print(f"Published detection areas for {len(detection_areas)} radars to simulation service")
+            
+        except Exception as e:
+            print(f"Error publishing detection areas: {e}")
+    
+    async def update_detection_areas(self):
+        """Update and publish detection areas (called periodically)"""
+        await self.publish_detection_areas()
+    

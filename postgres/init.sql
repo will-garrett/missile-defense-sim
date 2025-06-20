@@ -16,6 +16,7 @@ CREATE TABLE platform_type (
     accuracy_percent NUMERIC,
     max_payload_kg NUMERIC,
     fuel_capacity_kg NUMERIC,
+    fuel_consumption_rate_kgps NUMERIC, -- Fuel consumption rate in kg/s
     thrust_n NUMERIC,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
@@ -169,44 +170,44 @@ CREATE INDEX idx_engagement_status ON engagement(status);
 -- Seed Data: Comprehensive Military Systems from Major World Powers and Insurgency Groups
 
 -- Attack Platforms - United States
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('MGM-140 ATACMS', 'launch_platform', 'US Army Tactical Missile System', 0, 300000, 50000, 150, 230, 2000, 450000),
-('MGM-31 Pershing II', 'launch_platform', 'US Army Medium-Range Ballistic Missile', 0, 1800000, 100000, 200, 1400, 3000, 600000),
-('UGM-133 Trident II', 'launch_platform', 'US Navy Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 500, 2800, 8000, 1200000),
-('AGM-158 JASSM', 'launch_platform', 'US Air Force Joint Air-to-Surface Standoff Missile', 0, 370000, 15000, 100, 450, 1500, 300000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('MGM-140 ATACMS', 'launch_platform', 'US Army Tactical Missile System', 0, 300000, 50000, 150, 230, 2000, 15.0, 450000),
+('MGM-31 Pershing II', 'launch_platform', 'US Army Medium-Range Ballistic Missile', 0, 1800000, 100000, 200, 1400, 3000, 12.0, 600000),
+('UGM-133 Trident II', 'launch_platform', 'US Navy Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 500, 2800, 12000, 20.0, 1200000),
+('AGM-158 JASSM', 'launch_platform', 'US Air Force Joint Air-to-Surface Standoff Missile', 0, 370000, 15000, 100, 450, 1500, 1.5, 300000);
 
 -- Attack Platforms - Russia
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('9K720 Iskander-M', 'launch_platform', 'Russian Army Tactical Ballistic Missile System', 0, 500000, 100000, 200, 500, 3000, 400000),
-('RT-2PM2 Topol-M', 'launch_platform', 'Russian Strategic Ballistic Missile', 0, 11000000, 1200000, 800, 1200, 5000, 1000000),
-('R-29RMU2 Layner', 'launch_platform', 'Russian Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 600, 2800, 8000, 1200000),
-('Kh-101', 'launch_platform', 'Russian Air-Launched Cruise Missile', 0, 5500000, 15000, 150, 400, 2000, 350000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('9K720 Iskander-M', 'launch_platform', 'Russian Army Tactical Ballistic Missile System', 0, 500000, 100000, 200, 500, 3000, 15.0, 400000),
+('RT-2PM2 Topol-M', 'launch_platform', 'Russian Strategic Ballistic Missile', 0, 11000000, 1200000, 800, 1200, 5000, 18.0, 1000000),
+('R-29RMU2 Layner', 'launch_platform', 'Russian Submarine-Launched Ballistic Missile', 0, 12000000, 1000000, 600, 2800, 12000, 22.0, 1200000),
+('Kh-101', 'launch_platform', 'Russian Air-Launched Cruise Missile', 0, 5500000, 15000, 150, 400, 2000, 1.8, 350000);
 
 -- Attack Platforms - China
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('DF-21D', 'launch_platform', 'Chinese Anti-Ship Ballistic Missile', 0, 1500000, 200000, 300, 800, 4000, 600000),
-('DF-31AG', 'launch_platform', 'Chinese Road-Mobile ICBM', 0, 12000000, 1200000, 800, 1000, 5000, 1000000),
-('JL-2', 'launch_platform', 'Chinese Submarine-Launched Ballistic Missile', 0, 8000000, 1000000, 500, 1000, 5000, 800000),
-('CJ-10', 'launch_platform', 'Chinese Land-Attack Cruise Missile', 0, 2000000, 15000, 100, 500, 2000, 400000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('DF-21D', 'launch_platform', 'Chinese Anti-Ship Ballistic Missile', 0, 1500000, 200000, 300, 800, 4000, 16.0, 600000),
+('DF-31AG', 'launch_platform', 'Chinese Road-Mobile ICBM', 0, 12000000, 1200000, 800, 1000, 5000, 20.0, 1000000),
+('JL-2', 'launch_platform', 'Chinese Submarine-Launched Ballistic Missile', 0, 8000000, 1000000, 500, 1000, 5000, 18.0, 800000),
+('CJ-10', 'launch_platform', 'Chinese Land-Attack Cruise Missile', 0, 2000000, 15000, 100, 500, 2000, 1.2, 400000);
 
 -- Attack Platforms - North Korea
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('Hwasong-15', 'launch_platform', 'North Korean Intercontinental Ballistic Missile', 0, 13000000, 1200000, 800, 1000, 5000, 1000000),
-('Hwasong-12', 'launch_platform', 'North Korean Intermediate-Range Ballistic Missile', 0, 4500000, 800000, 400, 650, 3500, 700000),
-('Pukguksong-2', 'launch_platform', 'North Korean Submarine-Launched Ballistic Missile', 0, 1200000, 500000, 300, 500, 2500, 500000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('Hwasong-15', 'launch_platform', 'North Korean Intercontinental Ballistic Missile', 0, 13000000, 1200000, 800, 1000, 5000, 18.0, 1000000),
+('Hwasong-12', 'launch_platform', 'North Korean Intermediate-Range Ballistic Missile', 0, 4500000, 800000, 400, 650, 3500, 14.0, 700000),
+('Pukguksong-2', 'launch_platform', 'North Korean Submarine-Launched Ballistic Missile', 0, 1200000, 500000, 300, 500, 2500, 12.0, 500000);
 
 -- Attack Platforms - Iran
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('Shahab-3', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 1300000, 200000, 250, 750, 3500, 500000),
-('Ghadr-110', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 2000000, 300000, 300, 800, 4000, 600000),
-('Soumar', 'launch_platform', 'Iranian Land-Attack Cruise Missile', 0, 2500000, 15000, 100, 450, 2000, 350000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('Shahab-3', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 1300000, 200000, 250, 750, 3500, 23.0, 500000),
+('Ghadr-110', 'launch_platform', 'Iranian Medium-Range Ballistic Missile', 0, 2000000, 300000, 300, 800, 4000, 25.0, 600000),
+('Soumar', 'launch_platform', 'Iranian Land-Attack Cruise Missile', 0, 2500000, 15000, 100, 450, 2000, 3.2, 350000);
 
 -- Attack Platforms - Insurgency Groups
-INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, thrust_n) VALUES
-('Qassam Rocket', 'launch_platform', 'Hamas Rocket Artillery', 0, 17000, 5000, 50, 5, 50, 10000),
-('Grad Rocket', 'launch_platform', 'Insurgency Multiple Rocket Launcher', 0, 20000, 8000, 75, 20, 100, 15000),
-('Fajr-5', 'launch_platform', 'Iranian-Backed Rocket Artillery', 0, 75000, 15000, 100, 90, 300, 25000),
-('Katyusha Rocket', 'launch_platform', 'Soviet-Designed Rocket Artillery', 0, 20000, 8000, 60, 18, 80, 12000);
+INSERT INTO platform_type (nickname, category, description, max_speed_mps, max_range_m, max_altitude_m, blast_radius_m, max_payload_kg, fuel_capacity_kg, fuel_consumption_rate_kgps, thrust_n) VALUES
+('Qassam Rocket', 'launch_platform', 'Hamas Rocket Artillery', 0, 17000, 5000, 50, 5, 50, 2.0, 10000),
+('Grad Rocket', 'launch_platform', 'Insurgency Multiple Rocket Launcher', 0, 20000, 8000, 75, 20, 100, 3.0, 15000),
+('Fajr-5', 'launch_platform', 'Iranian-Backed Rocket Artillery', 0, 75000, 15000, 100, 90, 300, 5.0, 25000),
+('Katyusha Rocket', 'launch_platform', 'Soviet-Designed Rocket Artillery', 0, 20000, 8000, 60, 18, 80, 2.5, 12000);
 
 -- Detection Systems - United States
 INSERT INTO platform_type (nickname, category, description, detection_range_m, sweep_rate_deg_per_sec, max_altitude_m) VALUES

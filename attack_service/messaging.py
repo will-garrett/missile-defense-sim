@@ -9,6 +9,16 @@ import asyncpg
 import nats
 from nats.aio.client import Client as NATS
 import json
+import math
+
+class MissileState:
+    def __init__(self, missile_id, position, velocity, target, fuel_remaining, status="active"):
+        self.missile_id = missile_id
+        self.position = position  # [x, y, z]
+        self.velocity = velocity  # [vx, vy, vz]
+        self.target = target      # [x, y, z]
+        self.fuel_remaining = fuel_remaining
+        self.status = status
 
 class MessagingService:
     def __init__(self, db_dsn: str, nats_url: str = "nats://nats:4222"):
@@ -16,6 +26,8 @@ class MessagingService:
         self.nats_url = nats_url
         self.db_pool: Optional[asyncpg.Pool] = None
         self.nats_client: Optional[NATS] = None
+        self.active_missiles: Dict[str, MissileState] = {}
+        self.simulation_task = None
     
     async def initialize(self):
         """Initialize database connection and NATS client"""
@@ -26,6 +38,7 @@ class MessagingService:
         self.nats_client = NATS()
         await self.nats_client.connect(self.nats_url)
         print("Attack Service messaging initialized")
+        self.simulation_task = asyncio.create_task(self.simulate_missiles_loop())
     
     async def shutdown(self):
         """Shutdown connections"""
@@ -33,6 +46,8 @@ class MessagingService:
             await self.nats_client.close()
         if self.db_pool:
             await self.db_pool.close()
+        if self.simulation_task:
+            self.simulation_task.cancel()
     
     async def _create_db_pool_with_retry(self, max_retries=30, delay=2):
         """Create database pool with retry logic for startup timing"""
@@ -152,12 +167,12 @@ class MessagingService:
                            launch_lat: float, launch_lon: float, launch_alt: float,
                            target_lat: float, target_lon: float, target_alt: float,
                            missile_type: str = "attack") -> Dict[str, Any]:
-        """Launch a missile"""
+        """Launch a missile with realistic airburst target calculation"""
         
         # Validate platform exists
         async with self.db_pool.acquire() as con:
             platform = await con.fetchrow(
-                "SELECT id, category FROM platform_type WHERE nickname = $1",
+                "SELECT id, category, blast_radius_m FROM platform_type WHERE nickname = $1",
                 platform_nickname
             )
             
@@ -189,6 +204,18 @@ class MessagingService:
                     launch_callsign
                 )
         
+        # Calculate airburst target position for realistic detonation
+        blast_radius = float(platform.get('blast_radius_m', 200.0))  # Default 200m blast radius
+        
+        # For airburst detonation, calculate optimal detonation altitude
+        # This should be above the target but within blast radius for maximum effectiveness
+        airburst_altitude = max(target_alt + 100, blast_radius * 0.5)  # At least 100m above target or half blast radius
+        
+        # Calculate target position for airburst (same lat/lon, but higher altitude)
+        airburst_target_lat = target_lat
+        airburst_target_lon = target_lon
+        airburst_target_alt = airburst_altitude
+        
         # Send launch request to simulation service via NATS
         launch_message = {
             "type": "missile_launch",
@@ -197,20 +224,36 @@ class MessagingService:
             "launch_lat": launch_lat,
             "launch_lon": launch_lon,
             "launch_alt": launch_alt,
-            "target_lat": target_lat,
-            "target_lon": target_lon,
-            "target_alt": target_alt,
+            "target_lat": airburst_target_lat,
+            "target_lon": airburst_target_lon,
+            "target_alt": airburst_target_alt,
             "missile_type": missile_type,
+            "blast_radius": blast_radius,
             "timestamp": time.time()
         }
         
         await self.nats_client.publish("simulation.launch", json.dumps(launch_message).encode())
         
+        # Add to local simulation state
+        missile_id = f"{launch_callsign}_{int(time.time()*1000)}"
+        position = [launch_lon, launch_lat, launch_alt]
+        target = [airburst_target_lon, airburst_target_lat, airburst_target_alt]
+        # Simple initial velocity toward target
+        dx = airburst_target_lon - launch_lon
+        dy = airburst_target_lat - launch_lat
+        dz = airburst_target_alt - launch_alt
+        mag = math.sqrt(dx*dx + dy*dy + dz*dz)
+        if mag > 0:
+            velocity = [dx/mag*500, dy/mag*500, dz/mag*500]  # 500 m/s initial
+        else:
+            velocity = [0, 0, 500]
+        self.active_missiles[missile_id] = MissileState(missile_id, position, velocity, target, fuel_remaining=1000.0)
         return {
             "status": "launch_requested",
             "platform": platform_nickname,
             "launch_installation": launch_callsign,
-            "target": {"lat": target_lat, "lon": target_lon, "alt": target_alt},
+            "target": {"lat": airburst_target_lat, "lon": airburst_target_lon, "alt": airburst_target_alt},
+            "blast_radius": blast_radius,
             "timestamp": time.time()
         }
     
@@ -298,4 +341,26 @@ class MessagingService:
                 "status": "unhealthy",
                 "error": str(e),
                 "timestamp": time.time()
-            } 
+            }
+
+    async def simulate_missiles_loop(self):
+        while True:
+            await asyncio.sleep(0.1)  # 10 Hz
+            for missile_id, missile in list(self.active_missiles.items()):
+                if missile.status != "active":
+                    continue
+                # Simple physics: move toward target
+                for i in range(3):
+                    missile.position[i] += missile.velocity[i] * 0.1
+                # Publish position
+                msg = {
+                    "missile_id": missile_id,
+                    "position": {"x": missile.position[0], "y": missile.position[1], "z": missile.position[2]},
+                    "velocity": {"x": missile.velocity[0], "y": missile.velocity[1], "z": missile.velocity[2]},
+                    "timestamp": time.time()
+                }
+                await self.nats_client.publish("missile.position", json.dumps(msg).encode())
+                # End condition: reached target or below ground
+                dist = math.sqrt(sum((missile.position[i] - missile.target[i])**2 for i in range(3)))
+                if dist < 100 or missile.position[2] <= 0:
+                    missile.status = "detonated" 
