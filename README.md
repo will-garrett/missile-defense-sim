@@ -233,6 +233,85 @@ sequenceDiagram
 - **Prometheus**: Metrics collection and monitoring
 - **Grafana**: Visualization and dashboards
 
+### Scenario-Based Testing
+
+The system includes comprehensive scenario-based testing using Locust for realistic military simulations:
+
+#### Available Scenarios
+
+1. **Defend Hawaii** (`defend_hawaii`)
+   - **Description**: Chinese submarine attack on Hawaii
+   - **Attackers**: Chinese submarines with JL-2, DF-21D, CJ-10 missiles
+   - **Defenses**: US Aegis BMD, THAAD, Patriot systems
+   - **Complexity**: Medium
+
+2. **Iron Dome** (`iron_dome`)
+   - **Description**: Israeli Iron Dome defense against rocket attacks
+   - **Attackers**: Insurgency groups with Qassam, Grad, Fajr-5 rockets
+   - **Defenses**: Iron Dome, David's Sling, Arrow 3 systems
+   - **Complexity**: Low-Medium
+
+3. **WW3** (`ww3`)
+   - **Description**: Full-scale WW3: US vs Russia, China, North Korea
+   - **Attackers**: Multiple nations with strategic missiles
+   - **Defenses**: Complete US missile defense network
+   - **Complexity**: High
+
+4. **NATO Defense** (`nato_defense`)
+   - **Description**: NATO defense against Russian aggression in Europe
+   - **Attackers**: Russian tactical and strategic systems
+   - **Defenses**: European air defense systems
+   - **Complexity**: Medium
+
+5. **Middle East Conflict** (`middle_east`)
+   - **Description**: Regional conflict in the Middle East
+   - **Attackers**: Iranian and Houthi forces
+   - **Defenses**: Saudi Arabian defense systems
+   - **Complexity**: Medium
+
+#### Running Scenarios
+
+**Using Locust (Load Testing):**
+```bash
+# Start Locust master
+docker-compose up locust-master
+
+# Start Locust workers (in separate terminals)
+docker-compose up locust-worker
+
+# Access Locust UI at http://localhost:8089
+```
+
+**Using Scenario Runner (Individual Scenarios):**
+```bash
+# List available scenarios
+python locust/scenario_runner.py --list
+
+# Run specific scenario
+python locust/scenario_runner.py defend_hawaii
+python locust/scenario_runner.py iron_dome --delay 3
+python locust/scenario_runner.py ww3 --api-url http://localhost:9000
+
+# Run with custom parameters
+python locust/scenario_runner.py middle_east --delay 2 --api-url http://localhost:9000
+```
+
+#### Scenario Configuration
+
+Scenarios are defined in `locust/scenarios.py` with detailed configurations including:
+- **Target locations** and defense systems
+- **Attacker positions** and platform types
+- **Launch phases** with timing and coordination
+- **Realistic coordinates** and military platforms
+- **Variable complexity** levels for different testing needs
+
+Each scenario includes:
+- Realistic geographic coordinates
+- Appropriate military platforms by nation
+- Phased attack sequences
+- Defense system responses
+- Timing and coordination parameters
+
 ## 🚀 Quick Start
 
 ### Prerequisites
