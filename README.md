@@ -83,7 +83,7 @@ graph TB
     NATS -->|NATS SUB<br/>radar.detection| CC
     
     %% Command Center to Battery
-    CC -->|NATS PUB<br/>battery.{callsign}.engage| NATS
+    CC -->|NATS PUB<br/>battery.engage| NATS
     NATS -->|NATS SUB<br/>engagement orders| BS
     
     %% Battery to Simulation
@@ -172,7 +172,7 @@ sequenceDiagram
     %% Threat Assessment
     CC->>CC: Threat assessment & battery selection
     CC->>DB: SELECT available batteries
-    CC->>NATS: battery.{callsign}.engage
+    CC->>NATS: battery.engage
     NATS->>Battery: engagement order
     
     %% Counter-Missile Launch
