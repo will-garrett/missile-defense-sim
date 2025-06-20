@@ -252,8 +252,9 @@ The simulation engine is optimized for real-time performance:
 
 ## 📝 License
 
-[Add your license information here]
+MIT License - see [LICENSE](LICENSE) file for details
 
 ## 🤝 Contributing
 
-[Add contribution guidelines here]
+First off, **thanks!**
+Fork the repo, take a look around, author your changes and put in a pull request, see [CONTRIBUTING.md](CONTRIBUTING.md) for more detailed contribution guidelines and goals of the project.
