@@ -505,7 +505,10 @@ class CommandLogic:
                 await asyncio.sleep(1)
     
     async def update_battery_status(self):
-        """Update battery status from database"""
+        """Update battery status from database and reload available batteries"""
+        # Reload available batteries to detect new deployments
+        await self.load_available_batteries()
+        # Update ammo and status for already loaded batteries
         async with self.db_pool.acquire() as conn:
             batteries = await conn.fetch("""
                 SELECT i.callsign, i.ammo_count, i.status
@@ -513,7 +516,6 @@ class CommandLogic:
                 JOIN platform_type pt ON i.platform_type_id = pt.id
                 WHERE pt.category = 'counter_defense'
             """)
-            
             for row in batteries:
                 if row['callsign'] in self.available_batteries:
                     battery = self.available_batteries[row['callsign']]

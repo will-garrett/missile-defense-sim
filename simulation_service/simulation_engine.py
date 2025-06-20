@@ -250,6 +250,7 @@ class SimulationEngine:
         self.simulation_config: Dict = {}
         self.simulation_tick_ms = 100  # 100ms simulation tick
         self.detected_missiles = {}  # {radar_callsign: set(missile_ids)}
+        self.radar_detection_areas = {}  # {radar_callsign: detection_areas}
         
         # Bind ZMQ sockets
         self.zmq_pub.bind("tcp://0.0.0.0:5555")
@@ -786,26 +787,33 @@ class SimulationEngine:
             print(f"Error handling NATS message: {e}")
     
     async def handle_radar_detection_areas(self, msg):
-        """Handle incoming radar detection areas from radar service"""
+        """Handle radar detection area updates"""
         try:
             data = json.loads(msg.data.decode())
-            if data.get('type') == 'detection_areas_update':
-                radars = data.get('radars', [])
-                
-                # Update radar installations with detection area information
-                for radar_data in radars:
-                    radar_callsign = radar_data['radar_callsign']
-                    if radar_callsign in self.installations:
-                        # Update the installation with radar-specific data
-                        self.installations[radar_callsign].update({
-                            'detection_range_m': radar_data['detection_range_m'],
-                            'max_altitude_m': radar_data['max_altitude_m'],
-                            'sweep_rate_deg_per_sec': radar_data['sweep_rate_deg_per_sec'],
-                            'update_interval_ms': radar_data['update_interval_ms'],
-                            'radar_status': radar_data['status']
-                        })
-                
-                print(f"Updated detection areas for {len(radars)} radars")
-                
+            radar_callsign = data['radar_callsign']
+            detection_areas = data['detection_areas']
+            
+            # Store detection areas for this radar
+            self.radar_detection_areas[radar_callsign] = detection_areas
+            
         except Exception as e:
-            print(f"Error handling radar detection areas: {e}") 
+            print(f"Error handling radar detection areas: {e}")
+    
+    async def cleanup_simulation(self):
+        """Clean up all simulation state and reset to initial state"""
+        print("Cleaning up simulation engine...")
+        
+        # Clear all in-memory missile states
+        self.missiles.clear()
+        
+        # Clear radar detection areas
+        self.radar_detection_areas.clear()
+        
+        # Reset metrics
+        ACTIVE_MISSILES.set(0)
+        ACTIVE_DEFENSES.set(0)
+        
+        # Clear any pending tasks or timers
+        # Note: This is a basic cleanup - in a more complex system you might need to cancel tasks
+        
+        print("Simulation engine cleanup completed") 

@@ -170,4 +170,60 @@ class SimulationMessagingService:
                 FROM platform_type
                 ORDER BY category, nickname
             """)
-            return [dict(p) for p in platform_types] 
+            return [dict(p) for p in platform_types]
+    
+    async def cleanup_simulation(self) -> Dict[str, Any]:
+        """Clean up all simulation data - missiles, installations, etc."""
+        try:
+            async with self.db_pool.acquire() as con:
+                # Start transaction
+                async with con.transaction():
+                    # Clear active missiles
+                    active_missiles_deleted = await con.execute("DELETE FROM active_missile")
+                    
+                    # Clear missile outcomes
+                    outcomes_deleted = await con.execute("DELETE FROM missile_outcome")
+                    
+                    # Clear engagements
+                    engagements_deleted = await con.execute("DELETE FROM engagement")
+                    
+                    # Clear all installations
+                    installations_deleted = await con.execute("DELETE FROM installation")
+                    
+                    # Clean up simulation engine state
+                    engine_cleanup = await self.cleanup_simulation_engine()
+                    
+                    return {
+                        "status": "cleaned",
+                        "active_missiles_deleted": active_missiles_deleted,
+                        "outcomes_deleted": outcomes_deleted,
+                        "engagements_deleted": engagements_deleted,
+                        "installations_deleted": installations_deleted,
+                        "engine_cleanup": engine_cleanup,
+                        "timestamp": time.time()
+                    }
+        except Exception as e:
+            print(f"Error in cleanup_simulation: {e}")
+            return {
+                "status": "cleanup_failed",
+                "error": str(e),
+                "timestamp": time.time()
+            }
+    
+    async def abort_simulation(self) -> Dict[str, Any]:
+        """Abort the current simulation and clean up"""
+        return await self.cleanup_simulation()
+    
+    async def cleanup_simulation_engine(self, simulation_engine=None):
+        """Clean up the simulation engine state"""
+        try:
+            if simulation_engine:
+                await simulation_engine.cleanup_simulation()
+            elif hasattr(self, 'simulation_engine') and self.simulation_engine:
+                await self.simulation_engine.cleanup_simulation()
+            else:
+                print("No simulation engine reference available for cleanup")
+            return {"status": "engine_cleaned"}
+        except Exception as e:
+            print(f"Error cleaning simulation engine: {e}")
+            return {"status": "engine_cleanup_failed", "error": str(e)} 

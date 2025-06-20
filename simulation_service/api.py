@@ -104,6 +104,24 @@ class SimulationServiceAPI:
             """Get all available platform types"""
             return await self.messaging.get_platform_types()
         
+        @self.app.post("/cleanup")
+        async def cleanup_simulation():
+            """Clean up all simulation data"""
+            try:
+                result = await self.messaging.cleanup_simulation()
+                return result
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+        
+        @self.app.post("/abort")
+        async def abort_simulation():
+            """Abort the current simulation and clean up"""
+            try:
+                result = await self.messaging.abort_simulation()
+                return result
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Abort failed: {str(e)}")
+        
         @self.app.get("/metrics")
         def metrics():
             return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

@@ -277,14 +277,63 @@ async def get_all_test_status():
 
 @app.delete("/api/stop/{scenario_name}")
 async def stop_scenario(scenario_name: str):
-    """Stop a running scenario"""
+    """Stop a running scenario and clean up all simulation data"""
     if scenario_name not in test_runner.active_tests:
         raise HTTPException(status_code=404, detail="Test not found")
     
     test_run = test_runner.active_tests[scenario_name]
     test_run.status = "stopping"
     
-    return {"message": f"Scenario {scenario_name} stopping"}
+    # Clean up simulation state
+    await cleanup_simulation_state()
+    
+    # Remove the test from active tests
+    del test_runner.active_tests[scenario_name]
+    
+    return {"message": f"Scenario {scenario_name} stopped and cleaned up"}
+
+async def cleanup_simulation_state():
+    """Clean up all simulation state across all services"""
+    logger.info("Starting simulation cleanup...")
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Clean up simulation service
+        try:
+            logger.info("Cleaning up simulation service...")
+            response = await client.post("http://simulation_service:8000/cleanup")
+            if response.status_code == 200:
+                logger.info(f"Simulation service cleanup: {response.json()}")
+            else:
+                logger.warning(f"Simulation service cleanup failed: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup simulation service: {e}")
+        
+        # Clean up attack service installations
+        try:
+            logger.info("Cleaning up attack service installations...")
+            response = await client.get("http://attack_service:9000/installations")
+            if response.status_code == 200:
+                installations = response.json()
+                for inst in installations:
+                    callsign = inst.get("callsign")
+                    if callsign:
+                        await client.delete(f"http://attack_service:9000/installations/{callsign}")
+                        logger.info(f"Deleted installation {callsign} from attack service")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup attack service: {e}")
+        
+        # Send abort command to simulation service
+        try:
+            logger.info("Sending abort command to simulation service...")
+            response = await client.post("http://simulation_service:8000/abort")
+            if response.status_code == 200:
+                logger.info(f"Simulation service abort: {response.json()}")
+            else:
+                logger.warning(f"Simulation service abort failed: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Failed to abort simulation service: {e}")
+    
+    logger.info("Simulation cleanup completed")
 
 async def setup_installations_on_services(installations: List[Dict[str, Any]]):
     """Create installations on both simulation_service and attack_service."""

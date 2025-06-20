@@ -61,6 +61,9 @@ async def main():
     simulation_engine = SimulationEngine(db_pool, nats_client, zmq_context)
     await simulation_engine.initialize()
     
+    # Store reference to simulation engine in messaging service for cleanup
+    messaging_service.simulation_engine = simulation_engine
+    
     # Initialize API service
     api_service = SimulationServiceAPI(messaging_service)
     app = api_service.get_app()
