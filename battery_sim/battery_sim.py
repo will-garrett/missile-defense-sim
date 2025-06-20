@@ -4,7 +4,7 @@ Coordinates API endpoints, messaging, and battery logic
 """
 import os
 import asyncio
-from prometheus_client import start_http_server
+from prometheus_client import start_http_server, Gauge, Counter
 import uvicorn
 import asyncpg
 import nats
@@ -22,6 +22,12 @@ from battery_logic import BatteryLogic
 
 # Prometheus metrics
 start_http_server(8000)
+
+# New position and event metrics
+BATTERY_POSITION = Gauge("battery_position", "Current position of each battery installation",
+                        ["battery_callsign", "status"])
+BATTERY_ENGAGEMENT_EVENT = Counter("battery_engagement_event", "Battery engagement event positions",
+                                  ["battery_callsign", "target_missile_id", "timestamp"])
 
 @dataclass
 class BatteryCapability:
@@ -78,7 +84,7 @@ class BatterySim:
             row = await conn.fetchrow("""
                 SELECT pt.max_range_m, pt.max_altitude_m, pt.accuracy_percent,
                        pt.reload_time_sec, pt.max_speed_mps, pt.blast_radius_m,
-                       i.ammo_count
+                       i.ammo_count, i.status
                 FROM installation i
                 JOIN platform_type pt ON i.platform_type_id = pt.id
                 WHERE i.callsign = $1
@@ -94,6 +100,16 @@ class BatterySim:
                     blast_radius_m=row['blast_radius_m']
                 )
                 self.ammo_count = row['ammo_count']
+                self.status = row['status']
+                
+                # Update Prometheus metrics for battery position
+                battery_pos = await self.get_battery_position()
+                if battery_pos:
+                    position_value = battery_pos['lat'] * 1000000 + (battery_pos['lon'] + 180) * 1000
+                    BATTERY_POSITION.labels(
+                        battery_callsign=self.callsign,
+                        status=self.status
+                    ).set(position_value)
                 
                 print(f"Loaded battery capabilities: range={self.battery_capability.max_range_m}m, "
                       f"altitude={self.battery_capability.max_altitude_m}m, "
@@ -298,6 +314,14 @@ class BatterySim:
     
     async def record_engagement_attempt(self, order: EngagementOrder, missile_id: str):
         """Record engagement attempt in database"""
+        # Update Prometheus metrics for battery engagement event position
+        position_value = order.intercept_point['lat'] * 1000000 + (order.intercept_point['lon'] + 180) * 1000
+        BATTERY_ENGAGEMENT_EVENT.labels(
+            battery_callsign=self.callsign,
+            target_missile_id=order.target_missile_id,
+            timestamp=str(int(order.timestamp))
+        ).inc()
+        
         async with self.db_pool.acquire() as conn:
             # Get attempt number
             attempt_count = await conn.fetchval("""

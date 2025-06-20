@@ -6,6 +6,7 @@ import time
 import math
 from typing import Dict, Optional, List
 from dataclasses import dataclass
+from prometheus_client import Counter, Gauge
 
 @dataclass
 class BatteryCapability:
@@ -23,6 +24,14 @@ class EngagementOrder:
     intercept_altitude: float
     probability_of_success: float
     timestamp: float
+
+# Prometheus metrics
+BATTERY_ENGAGEMENTS = Counter("battery_engagements_total", "Total battery engagements", ["battery_callsign"])
+BATTERY_LAUNCHES = Counter("battery_launches_total", "Total battery launches", ["battery_callsign"])
+BATTERY_POSITION = Gauge("battery_position", "Current position of each battery installation",
+                        ["battery_callsign", "status"])
+BATTERY_ENGAGEMENT_EVENT = Counter("battery_engagement_event", "Battery engagement event positions",
+                                  ["battery_callsign", "target_missile_id", "timestamp"])
 
 class BatteryLogic:
     def __init__(self, callsign: str, battery_capability: BatteryCapability, ammo_count: int):

@@ -30,6 +30,20 @@ ACTIVE_MISSILES = Gauge("active_missiles", "Number of active missiles")
 ACTIVE_DEFENSES = Gauge("active_defenses", "Number of active defense missiles")
 PHYSICS_CALC_TIME = Histogram("physics_calculation_seconds", "Time spent on physics calculations")
 
+# New position and event metrics
+MISSILE_POSITION = Gauge("missile_position", "Current position of each missile", 
+                        ["missile_id", "callsign", "type", "status"])
+RADAR_INSTALLATION_POSITION = Gauge("radar_installation_position", "Position of each radar installation",
+                                   ["callsign", "status"])
+BATTERY_INSTALLATION_POSITION = Gauge("battery_installation_position", "Position of each battery installation",
+                                     ["callsign", "status"])
+DETECTION_EVENT_POSITION = Counter("detection_event_position", "Detection event positions",
+                                  ["radar_callsign", "missile_id", "timestamp"])
+DETONATION_EVENT_POSITION = Counter("detonation_event_position", "Detonation event positions",
+                                   ["missile_id", "callsign", "timestamp"])
+INTERCEPT_EVENT_POSITION = Counter("intercept_event_position", "Intercept event positions",
+                                  ["target_missile_id", "defense_missile_id", "timestamp"])
+
 @dataclass
 class Vector3D:
     x: float
@@ -310,6 +324,19 @@ class SimulationEngine:
                     'max_range_m': row['max_range_m'],
                     'max_altitude_m': row['max_altitude_m']
                 }
+                
+                # Update Prometheus metrics for installation positions
+                position_value = lat * 1000000 + (lon + 180) * 1000
+                if row['category'] == 'detection_system':
+                    RADAR_INSTALLATION_POSITION.labels(
+                        callsign=row['callsign'],
+                        status=row['status']
+                    ).set(position_value)
+                elif row['category'] == 'weapon_system':
+                    BATTERY_INSTALLATION_POSITION.labels(
+                        callsign=row['callsign'],
+                        status=row['status']
+                    ).set(position_value)
     
     async def create_missile(self, platform_nickname: str, launch_callsign: str, 
                            launch_lat: float, launch_lon: float, launch_alt: float,
@@ -537,6 +564,14 @@ class SimulationEngine:
             else:
                 notes = f"Missed target by {distance_to_target:.1f}m"
         
+        # Update Prometheus metrics for detonation event position
+        position_value = missile.position.y * 1000000 + (missile.position.x + 180) * 1000
+        DETONATION_EVENT_POSITION.labels(
+            missile_id=missile_id,
+            callsign=missile.callsign,
+            timestamp=str(int(time.time()))
+        ).inc()
+        
         # Record outcome in database
         async with self.db_pool.acquire() as conn:
             await conn.execute("""
@@ -578,6 +613,14 @@ class SimulationEngine:
             return
             
         target_missile = self.missiles[target_missile_id]
+        
+        # Update Prometheus metrics for intercept event position
+        position_value = target_missile.position.y * 1000000 + (target_missile.position.x + 180) * 1000
+        INTERCEPT_EVENT_POSITION.labels(
+            target_missile_id=target_missile_id,
+            defense_missile_id=defense_missile_id,
+            timestamp=str(int(time.time()))
+        ).inc()
         
         # Record interception outcome
         async with self.db_pool.acquire() as conn:
@@ -640,6 +683,15 @@ class SimulationEngine:
                         'signal_strength_db': 100,  # Placeholder
                         'confidence_percent': 95    # Placeholder
                     }
+                    
+                    # Update Prometheus metrics for detection event position
+                    position_value = missile.position.y * 1000000 + (missile.position.x + 180) * 1000
+                    DETECTION_EVENT_POSITION.labels(
+                        radar_callsign=radar_callsign,
+                        missile_id=missile_id,
+                        timestamp=str(int(time.time()))
+                    ).inc()
+                    
                     await self.nats_client.publish('detection.event', json.dumps(detection_event).encode())
                     print(f"Detection: Radar {radar_callsign} detected missile {missile_id} at {missile.position}")
     
@@ -655,6 +707,18 @@ class SimulationEngine:
             missile = self.missiles[missile_id]
             if missile.status != "active":
                 continue
+            
+            # Update Prometheus metrics for missile position
+            # Note: Prometheus doesn't support float labels, so we'll encode position as a single value
+            # We'll use a combination of lat/lon as a single float for the gauge value
+            # Encode as: lat * 1000000 + (lon + 180) * 1000 to handle negative longitudes
+            position_value = missile.position.y * 1000000 + (missile.position.x + 180) * 1000
+            MISSILE_POSITION.labels(
+                missile_id=missile_id,
+                callsign=missile.callsign,
+                type=missile.missile_type,
+                status=missile.status
+            ).set(position_value)
             
             # Update database
             async with self.db_pool.acquire() as conn:

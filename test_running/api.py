@@ -159,8 +159,13 @@ test_runner = TestRunner()
 
 # Web Interface Routes
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    """Main dashboard page"""
+async def home(request: Request):
+    """Home page"""
+    return templates.TemplateResponse("home.html", {"request": request})
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request):
+    """Real-time dashboard page"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 @app.get("/scenarios", response_class=HTMLResponse)
@@ -174,9 +179,36 @@ async def scenarios_page(request: Request):
 @app.get("/status", response_class=HTMLResponse)
 async def status_page(request: Request):
     """Status monitoring page"""
+    # Get current test status
+    test_status = "idle"
+    current_scenario = None
+    scenario_results = None
+    active_tests = []
+    
+    if test_runner.active_tests:
+        # Get the most recent test
+        latest_test = list(test_runner.active_tests.values())[-1]
+        test_status = latest_test.status
+        current_scenario = latest_test.scenario_name
+        if latest_test.results:
+            scenario_results = latest_test.results
+        
+        active_tests = [
+            {
+                "name": test_run.scenario_name,
+                "status": test_run.status,
+                "start_time": test_run.start_time.isoformat() if test_run.start_time else None,
+                "duration": str(test_run.end_time - test_run.start_time) if test_run.start_time and test_run.end_time else None
+            }
+            for test_run in test_runner.active_tests.values()
+        ]
+    
     return templates.TemplateResponse("status.html", {
         "request": request,
-        "active_tests": list(test_runner.active_tests.values())
+        "test_status": test_status,
+        "current_scenario": current_scenario,
+        "scenario_results": scenario_results,
+        "active_tests": active_tests
     })
 
 # API Routes
@@ -532,7 +564,161 @@ async def run_scenario_background(scenario_name: str):
 
 @app.get("/metrics")
 def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    """Prometheus metrics endpoint"""
+    return {"message": "Metrics endpoint"}
+
+# Metrics API endpoints for dashboard
+@app.get("/api/metrics/missile_positions")
+async def get_missile_positions():
+    """Get missile positions from Prometheus metrics"""
+    try:
+        # Query Prometheus for missile position metrics
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://prometheus:9090/api/v1/query", params={
+                "query": "missile_position"
+            })
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("data", {}).get("result", [])
+            else:
+                return []
+    except Exception as e:
+        logger.error(f"Error fetching missile positions: {e}")
+        return []
+
+@app.get("/api/metrics/defense_positions")
+async def get_defense_positions():
+    """Get defense positions from Prometheus metrics"""
+    try:
+        # Query Prometheus for defense position metrics
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://prometheus:9090/api/v1/query", params={
+                "query": "defense_position"
+            })
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("data", {}).get("result", [])
+            else:
+                return []
+    except Exception as e:
+        logger.error(f"Error fetching defense positions: {e}")
+        return []
+
+@app.get("/api/metrics/radar_positions")
+async def get_radar_positions():
+    """Get radar positions from Prometheus metrics"""
+    try:
+        # Query Prometheus for radar position metrics
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://prometheus:9090/api/v1/query", params={
+                "query": "radar_position"
+            })
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("data", {}).get("result", [])
+            else:
+                return []
+    except Exception as e:
+        logger.error(f"Error fetching radar positions: {e}")
+        return []
+
+@app.get("/api/metrics/events")
+async def get_events():
+    """Get events from Prometheus metrics"""
+    try:
+        # Query Prometheus for event metrics
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://prometheus:9090/api/v1/query", params={
+                "query": "event_location"
+            })
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("data", {}).get("result", [])
+            else:
+                return []
+    except Exception as e:
+        logger.error(f"Error fetching events: {e}")
+        return []
+
+@app.get("/api/scenario/bounds")
+async def get_scenario_bounds():
+    """Get the geographic bounds of the current scenario for map positioning"""
+    try:
+        # Get current scenario installations to determine bounds
+        async with httpx.AsyncClient() as client:
+            response = await client.get("http://simulation_service:8000/installations")
+            if response.status_code == 200:
+                installations = response.json()
+                if installations:
+                    # Calculate bounds from installations
+                    lats = [inst.get('lat', 0) for inst in installations]
+                    lons = [inst.get('lon', 0) for inst in installations]
+                    
+                    if lats and lons:
+                        min_lat, max_lat = min(lats), max(lats)
+                        min_lon, max_lon = min(lons), max(lons)
+                        
+                        # Add padding
+                        lat_padding = (max_lat - min_lat) * 0.1
+                        lon_padding = (max_lon - min_lon) * 0.1
+                        
+                        return {
+                            "bounds": [
+                                [min_lon - lon_padding, min_lat - lat_padding],
+                                [max_lon + lon_padding, max_lat + lat_padding]
+                            ],
+                            "center": [
+                                (min_lon + max_lon) / 2,
+                                (min_lat + max_lat) / 2
+                            ],
+                            "zoom": 8
+                        }
+                
+                # Default to Hawaii area if no installations
+                return {
+                    "bounds": [
+                        [-160.5, 21.0],
+                        [-157.0, 22.5]
+                    ],
+                    "center": [-158.75, 21.75],
+                    "zoom": 8
+                }
+            else:
+                return {
+                    "bounds": [
+                        [-160.5, 21.0],
+                        [-157.0, 22.5]
+                    ],
+                    "center": [-158.75, 21.75],
+                    "zoom": 8
+                }
+    except Exception as e:
+        logger.error(f"Error fetching scenario bounds: {e}")
+        return {
+            "bounds": [
+                [-160.5, 21.0],
+                [-157.0, 22.5]
+            ],
+            "center": [-158.75, 21.75],
+            "zoom": 8
+        }
+
+@app.post("/api/scenarios/stop")
+async def stop_scenario():
+    """Stop the currently running scenario"""
+    try:
+        # Send stop command to simulation service
+        async with httpx.AsyncClient() as client:
+            response = await client.post("http://simulation_service:8000/scenarios/stop")
+            
+        if response.status_code == 200:
+            return {"status": "success", "message": "Scenario stopped successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to stop scenario")
+            
+    except Exception as e:
+        logger.error(f"Error stopping scenario: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

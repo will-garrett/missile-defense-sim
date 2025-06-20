@@ -25,6 +25,12 @@ ACTIVE_TRACKS = Gauge("active_tracks", "Number of active tracks")
 RADAR_INSTALLATIONS = Gauge("radar_installations", "Number of active radar installations")
 DETECTION_LATENCY = Histogram("detection_latency_seconds", "Time from missile launch to detection")
 
+# New position and event metrics
+RADAR_POSITION = Gauge("radar_position", "Current position of each radar installation",
+                      ["radar_callsign", "status"])
+RADAR_DETECTION_EVENT = Counter("radar_detection_event", "Radar detection event positions",
+                               ["radar_callsign", "missile_id", "timestamp"])
+
 @dataclass
 class RadarCapability:
     detection_range_m: float
@@ -134,6 +140,14 @@ class RadarLogic:
                 )
                 
                 self.radar_installations[row['callsign']] = installation
+            
+            # Update Prometheus metrics for radar positions
+            for callsign, installation in self.radar_installations.items():
+                position_value = installation.position[0] * 1000000 + (installation.position[1] + 180) * 1000  # lat * 1000000 + (lon + 180) * 1000
+                RADAR_POSITION.labels(
+                    radar_callsign=callsign,
+                    status=installation.status
+                ).set(position_value)
             
             RADAR_INSTALLATIONS.set(len(self.radar_installations))
             print(f"Loaded {len(self.radar_installations)} radar installations")
@@ -307,6 +321,14 @@ class RadarLogic:
     async def process_detection(self, detection: Dict):
         """Process a radar detection"""
         try:
+            # Update Prometheus metrics for radar detection event position
+            position_value = detection['position']['y'] * 1000000 + (detection['position']['x'] + 180) * 1000
+            RADAR_DETECTION_EVENT.labels(
+                radar_callsign=detection['radar_callsign'],
+                missile_id=detection['missile_id'],
+                timestamp=str(int(detection['timestamp']))
+            ).inc()
+            
             # Record detection in database
             await self.record_detection(detection)
             
