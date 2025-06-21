@@ -1,0 +1,11 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+asyncpg
+httpx
+pydantic
+psycopg2-binary
+jinja2==3.1.2
+python-multipart
+requests==2.31.0
+aiohttp
+prometheus-client==0.19.0 

@@ -14,12 +14,11 @@ def check_service_health():
     
     services = [
         ("simulation_service", "http://localhost:8001/health", "GET"),
-        ("attack_service (metrics)", "http://localhost:8003/health", "GET"),
-        ("attack_service (REST)", "http://localhost:9000/health", "GET"),
+        ("attack_service", "http://localhost:9000/health", "GET"),
         ("command_center", "http://localhost:8005/health", "GET"),
         ("radar_service", "http://localhost:8006/health", "GET"),
         ("battery_sim", "http://localhost:8007/health", "GET"),
-        ("test_running", "http://localhost:8089/health", "GET"),
+        ("dashboard", "http://localhost:8089/health", "GET"),
     ]
     
     healthy_services = []
@@ -115,7 +114,7 @@ def check_prometheus_metrics():
         ("command_center", "http://localhost:8005/metrics"),
         ("radar_service", "http://localhost:8006/metrics"),
         ("battery_sim", "http://localhost:8007/metrics"),
-        ("test_running", "http://localhost:8089/metrics"),
+        ("dashboard", "http://localhost:8089/metrics"),
     ]
     
     for service_name, url in metrics_services:

@@ -47,9 +47,9 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 5s
 
-  # Test Runner
-  - job_name: 'test_running'
+  # Dashboard
+  - job_name: 'dashboard'
     static_configs:
-      - targets: ['test_running:8000']
+      - targets: ['dashboard:8000']
     metrics_path: '/metrics'
     scrape_interval: 5s

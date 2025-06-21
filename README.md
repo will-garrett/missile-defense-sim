@@ -115,7 +115,7 @@ sequenceDiagram
 
 ### Services
 
-- **`test_running`**: A FastAPI-based web interface for running test scenarios, monitoring system status, and visualizing engagements in real-time. Provides REST APIs and web UI for scenario management.
+- **`dashboard`**: A FastAPI-based web interface for running test scenarios, monitoring system status, and visualizing engagements in real-time. Provides REST APIs and web UI for scenario management.
 
 - **`attack_service`**: Manages missile launch scenarios and communicates launch events to the simulation service. Handles platform types, installations, and missile launch requests.
 
@@ -123,9 +123,9 @@ sequenceDiagram
 
 - **`radar_service`**: Simulates radar installations that detect and track missiles. Publishes detection events and maintains coverage area information for the simulation engine.
 
-- **`command_center`**: Assesses threats detected by the radar service, coordinates defensive actions, and selects optimal batteries for engagement based on threat analysis and battery capabilities.
+- **`command_center`**: Coordinates defense actions based on integrated sensor data.
 
-- **`battery_sim`**: Simulates missile defense batteries that fire interceptors based on commands from the command center. Manages individual battery state and engagement results.
+- **`battery_sim`**: Simulates counter-measure battery actions.
 
 ## 🚀 Getting Started
 

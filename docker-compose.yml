@@ -100,10 +100,17 @@ services:
       - CALL_SIGN=${BATTERY_CALL_SIGN:-DEF_AEG_01}
     ports: [ "8007:8007" ]
 
-# Test Running Service
-  test_running:
-    build: ./test_running
+# Dashboard Services
+  dashboard-backend:
+    build: ./dashboard
+    command: uvicorn web_interface:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./dashboard:/app
     depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
       attack_service:
         condition: service_started
       simulation_service:
@@ -111,8 +118,37 @@ services:
     ports:
       - "8089:8000"   # Web UI and API
     environment:
+      - DB_DSN=postgresql://missiles:missiles@postgres/missilesim
       - SIMULATION_SERVICE_URL=http://simulation_service:8000
       - ATTACK_SERVICE_URL=http://attack_service:9000
+
+  # Production frontend (built with nginx)
+  dashboard-frontend:
+    build: ./dashboard/frontend
+    depends_on:
+      dashboard-backend:
+        condition: service_started
+    ports:
+      - "3001:3000"   # Frontend UI
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8089
+
+  # Development frontend (with hot reloading)
+  dashboard-frontend-dev:
+    build:
+      context: ./dashboard/frontend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      dashboard-backend:
+        condition: service_started
+    ports:
+      - "3002:3000"   # Development Frontend UI
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8089
+    volumes:
+      - ./dashboard/frontend:/app
+      - /app/node_modules
+      - /app/.next
 
   pgadmin:
     image: dpage/pgadmin4:latest

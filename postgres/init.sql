@@ -146,6 +146,24 @@ CREATE TABLE detonation_event (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Scenario Actions -----------------------------------------------------------
+CREATE TABLE scenarios (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scenario_name VARCHAR(255) NOT NULL,
+    time_from_start_seconds INT NOT NULL,
+    action JSONB NOT NULL
+);
+
+-- Seed Scenario Data
+INSERT INTO scenarios (scenario_name, time_from_start_seconds, action) VALUES
+('Hawaii Test Alpha', 1, '{"deploy_radar": {"nickname": "AN/TPY-2", "callsign": "DS-HAWAII-OAHU-PEARL", "lat": 21.35, "lon": -157.98, "alt": 150}}'),
+('Hawaii Test Alpha', 1, '{"deploy_radar": {"nickname": "AN/SPY-1", "callsign": "DS-USN-CG-70-LAKE-ERIE", "lat": 21.40, "lon": -158.20, "alt": 25}}'),
+('Hawaii Test Alpha', 1, '{"deploy_launcher": {"nickname": "Aegis BMD SM-3", "callsign": "CM-USN-CG-70-AEGIS", "lat": 21.40, "lon": -158.20, "alt": 25}}'),
+('Hawaii Test Alpha', 1, '{"deploy_launcher": {"nickname": "THAAD", "callsign": "CM-USA-94TH-THAAD-ZULU", "lat": 21.32, "lon": -157.85, "alt": 200}}'),
+('Hawaii Test Alpha', 30, '{"launch_missile": {"nickname": "DF-21D", "callsign": "AM-CHINA-SCUD-V-ALPHA-2786a1", "from_lat": 25.0, "from_lon": -155.0, "from_alt": -150, "target_lat": 21.30, "target_lon": -157.86}}'),
+('Hawaii Test Alpha', 120, '{"launch_missile": {"nickname": "Hwasong-15", "callsign": "AM-NK-ICBM-BETA-0104b3", "from_lat": 39.02, "from_lon": 125.75, "from_alt": 50, "target_lat": 21.44, "target_lon": -158.05}}'),
+('Hawaii Test Alpha', 210, '{"launch_missile": {"nickname": "CJ-10", "callsign": "AM-CHINA-CRUISE-GAMMA-9011c7", "from_lat": 22.0, "from_lon": -160.0, "from_alt": 10000, "target_lat": 21.35, "target_lon": -157.98}}');
+
 -- Simulation Configuration ---------------------------------------------------
 CREATE TABLE simulation_config (
     id SERIAL PRIMARY KEY,
