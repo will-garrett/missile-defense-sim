@@ -359,10 +359,12 @@ class MessagingService:
                     missile.position[i] += missile.velocity[i] * 0.1
                 # Publish position
                 msg = {
-                    "missile_id": missile_id,
+                    "id": missile_id,
+                    "callsign": f"ATT_{missile_id[:8]}",
                     "position": {"x": missile.position[0], "y": missile.position[1], "z": missile.position[2]},
                     "velocity": {"x": missile.velocity[0], "y": missile.velocity[1], "z": missile.velocity[2]},
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "missile_type": "attack"
                 }
                 await self.nats_client.publish("missile.position", json.dumps(msg).encode())
                 # End condition: reached target or below ground
