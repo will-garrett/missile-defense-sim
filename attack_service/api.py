@@ -13,18 +13,20 @@ from messaging import MessagingService
 # Prometheus metrics
 LAUNCHES = Counter("missile_launches", "Total missiles launched")
 PLATFORM_CREATIONS = Counter("platform_creations", "Total platform installations created")
+PLATFORM_ARMED = Counter("platform_armed", "Total platforms armed with munitions")
 
 # Pydantic models
+class ArmRequest(BaseModel):
+    launcher_callsign: str
+    munition_nickname: str
+    quantity: int
+
 class LaunchRequest(BaseModel):
-    platform_nickname: str
-    launch_callsign: str
-    launch_lat: float
-    launch_lon: float
-    launch_alt: float = 0
+    launcher_callsign: str
+    munition_nickname: str
     target_lat: float
     target_lon: float
     target_alt: float = 0
-    missile_type: str = "attack"
 
 class InstallationRequest(BaseModel):
     platform_nickname: str
@@ -98,20 +100,32 @@ class AttackServiceAPI:
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
         
+        @self.app.post("/arm")
+        async def arm_launcher(request: ArmRequest):
+            """Arm a launcher with a specific munition"""
+            try:
+                result = await self.messaging.arm_launcher(
+                    launcher_callsign=request.launcher_callsign,
+                    munition_nickname=request.munition_nickname,
+                    quantity=request.quantity
+                )
+                PLATFORM_ARMED.inc()
+                return result
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        
         @self.app.post("/launch")
         async def launch_missile(request: LaunchRequest):
             """Launch a missile"""
             try:
                 result = await self.messaging.launch_missile(
-                    platform_nickname=request.platform_nickname,
-                    launch_callsign=request.launch_callsign,
-                    launch_lat=request.launch_lat,
-                    launch_lon=request.launch_lon,
-                    launch_alt=request.launch_alt,
+                    launcher_callsign=request.launcher_callsign,
+                    munition_nickname=request.munition_nickname,
                     target_lat=request.target_lat,
                     target_lon=request.target_lon,
                     target_alt=request.target_alt,
-                    missile_type=request.missile_type
                 )
                 LAUNCHES.inc()
                 return result

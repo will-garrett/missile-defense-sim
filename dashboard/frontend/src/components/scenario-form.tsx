@@ -58,7 +58,7 @@ export function ScenarioForm({
     const newAction: Action = {
       type: ActionType.DEPLOY_LAUNCHER,
       details: {
-        nickname: '',
+        platform_nickname: '',
         callsign: '',
         lat: 0,
         lon: 0,

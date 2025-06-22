@@ -46,10 +46,3 @@ scrape_configs:
       - targets: ['battery_sim:8000']
     metrics_path: '/metrics'
     scrape_interval: 5s
-
-  # Dashboard
-  - job_name: 'dashboard'
-    static_configs:
-      - targets: ['dashboard:8000']
-    metrics_path: '/metrics'
-    scrape_interval: 5s

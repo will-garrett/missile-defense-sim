@@ -1,31 +1,38 @@
-# Build stage
-FROM node:18-alpine AS builder
+# Dockerfile for Next.js Frontend
 
+# 1. Builder Stage: Install dependencies and build the application
+FROM node:18-alpine AS builder
 WORKDIR /app
 
-# Copy package files
+# Copy package.json and lock file
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
-# Copy source code
+# Copy the rest of the application source code
 COPY . .
 
-# Build the application
+# Build the Next.js application
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+# 2. Runner Stage: Create a minimal production image
+FROM node:18-alpine AS runner
+WORKDIR /app
 
-# Copy built application from builder stage
-COPY --from=builder /app/out /usr/share/nginx/html
+# Set environment variables for production
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED 1
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy the standalone output from the builder stage
+COPY --from=builder /app/.next/standalone ./
+# Copy the public assets
+COPY --from=builder /app/public ./public
+# Copy the static assets (.next/static)
+COPY --from=builder /app/.next/static ./.next/static
 
-# Expose port
+# Expose the port Next.js runs on
 EXPOSE 3000
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+# Set the command to run the Next.js server
+CMD ["node", "server.js"] 

@@ -1,3 +1,5 @@
 _assets/
 _data/
 .env
+.DS_Store
+**/.DS_Store

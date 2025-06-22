@@ -17,6 +17,11 @@ interface PlatformType {
   category: string;
 }
 
+interface MunitionType {
+  nickname: string;
+  category: string;
+}
+
 interface ActionDetailsFormProps {
   actionType: string;
   details: Record<string, unknown>;
@@ -28,34 +33,20 @@ interface ActionDetailsFormProps {
 export function ActionDetailsForm({ actionType, details, onChange, onValidation }: ActionDetailsFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [platformTypes, setPlatformTypes] = useState<PlatformType[]>([]);
+  const [munitionTypes, setMunitionTypes] = useState<MunitionType[]>([]);
   const [localDetails, setLocalDetails] = useState(details);
 
-  const detailsString = JSON.stringify(details);
   useEffect(() => {
-    // Sync local state when the details prop changes from the parent
-    // This happens when the action type changes and we reset the form
     setLocalDetails(details);
-  }, [detailsString]);
+  }, [details]);
 
   // Fetch platform types when the component mounts or actionType changes
   useEffect(() => {
     async function fetchPlatformTypes() {
-      // Determine category based on actionType
       let category = '';
-      switch (actionType) {
-        case 'deploy_radar':
-        case 'vector_radar':
-          category = 'detection_system';
-          break;
-        case 'deploy_defense_battery':
-        case 'vector_defense_battery':
-          category = 'counter_defense';
-          break;
-        case 'deploy_launcher':
-        case 'launch_missile':
-          category = 'launch_platform';
-          break;
-      }
+      if (actionType === 'deploy_launcher') category = 'launch_platform';
+      else if (actionType === 'deploy_defense_battery') category = 'counter_defense';
+      else if (actionType === 'deploy_radar') category = 'detection_system';
       
       if (!category) {
         setPlatformTypes([]);
@@ -73,6 +64,30 @@ export function ActionDetailsForm({ actionType, details, onChange, onValidation 
       }
     }
     fetchPlatformTypes();
+  }, [actionType]);
+
+  // Fetch munition types based on action
+  useEffect(() => {
+    async function fetchMunitionTypes() {
+      let category = '';
+      if (actionType === 'arm_launcher' || actionType === 'launch_missile') category = 'attack';
+      else if (actionType === 'arm_battery') category = 'defense';
+
+      if (!category) {
+        setMunitionTypes([]);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/munition-types?category=${category}`);
+        if (!response.ok) throw new Error('Failed to fetch munition types');
+        const data = await response.json();
+        setMunitionTypes(data.munition_types || []);
+      } catch (error) {
+        console.error(error);
+        setMunitionTypes([]);
+      }
+    }
+    fetchMunitionTypes();
   }, [actionType]);
 
   useEffect(() => {
@@ -97,52 +112,59 @@ export function ActionDetailsForm({ actionType, details, onChange, onValidation 
   const handleNestedLocalChange = (parentField: string, childField: string, value: string | number) => {
     setLocalDetails(prev => {
       const parentObject = (prev[parentField] as Record<string, unknown>) || {};
+      const newParent = {
+        ...parentObject,
+        [childField]: value,
+      };
       return {
         ...prev,
-        [parentField]: {
-          ...parentObject,
-          [childField]: value,
-        },
+        [parentField]: newParent,
       };
     });
   };
 
   const handleBlur = (fieldPath: string, isNumber: boolean) => {
-    if (!isNumber) return;
-
-    const value = localDetails[fieldPath];
-    if (typeof value === 'string') {
-      const parsed = parseFloat(value);
-      if (!isNaN(parsed)) {
-        onChange({ ...details, [fieldPath]: parsed });
+    if (isNumber) {
+      const value = localDetails[fieldPath];
+      if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        if (!isNaN(parsed)) {
+          onChange({ ...localDetails, [fieldPath]: parsed });
+        } else {
+          // Revert if invalid by syncing with parent state
+          setLocalDetails(details);
+        }
       } else {
-        // Revert if invalid
-        setLocalDetails(details);
+        // If it's already a number or something else, just make sure parent is up-to-date
+        onChange(localDetails);
       }
+    } else {
+      // For string fields, propagate changes on blur
+      onChange(localDetails);
     }
   };
   
   const handleNestedBlur = (parentField: string, childField: string, isNumber: boolean) => {
-    if (!isNumber) return;
-
     const parentObject = localDetails[parentField] as Record<string, unknown> | undefined;
-    const value = parentObject?.[childField];
+    if (!parentObject) return;
 
-    if (typeof value === 'string') {
-      const parsed = parseFloat(value);
-      if (!isNaN(parsed)) {
-        const originalParent = (details[parentField] as Record<string, unknown>) || {};
-        onChange({
-          ...details,
-          [parentField]: {
-            ...originalParent,
-            [childField]: parsed
-          }
-        });
+    const value = parentObject[childField];
+
+    if (isNumber) {
+      if (typeof value === 'string') {
+        const parsed = parseFloat(value);
+        if (!isNaN(parsed)) {
+          const newParent = { ...parentObject, [childField]: parsed };
+          onChange({ ...localDetails, [parentField]: newParent });
+        } else {
+          setLocalDetails(details); // Revert
+        }
       } else {
-         // Revert if invalid
-        setLocalDetails(details);
+        onChange(localDetails);
       }
+    } else {
+      // For string fields, propagate changes on blur
+      onChange(localDetails);
     }
   };
 
@@ -191,10 +213,14 @@ export function ActionDetailsForm({ actionType, details, onChange, onValidation 
       <div className="space-y-2">
         <Label>Platform Type</Label>
         <Select
-          value={localDetails.nickname as string || ''}
-          onValueChange={(value) => handleLocalChange('nickname', value)}
+          value={localDetails.platform_nickname as string || ''}
+          onValueChange={(value) => {
+            const newDetails = { ...localDetails, platform_nickname: value };
+            setLocalDetails(newDetails);
+            onChange(newDetails);
+          }}
         >
-          <SelectTrigger className={errors['nickname'] ? 'border-red-500' : ''}>
+          <SelectTrigger className={errors['platform_nickname'] ? 'border-red-500' : ''}>
             <SelectValue placeholder="Select a platform" />
           </SelectTrigger>
           <SelectContent>
@@ -203,7 +229,33 @@ export function ActionDetailsForm({ actionType, details, onChange, onValidation 
             ))}
           </SelectContent>
         </Select>
-        {errors['nickname'] && <p className="text-sm text-red-500">{errors['nickname']}</p>}
+        {errors['platform_nickname'] && <p className="text-sm text-red-500">{errors['platform_nickname']}</p>}
+      </div>
+    );
+  };
+
+  const renderMunitionTypeDropdown = () => {
+    return (
+      <div className="space-y-2">
+        <Label>Munition Type</Label>
+        <Select
+          value={localDetails.munition_nickname as string || ''}
+          onValueChange={(value) => {
+            const newDetails = { ...localDetails, munition_nickname: value };
+            setLocalDetails(newDetails);
+            onChange(newDetails);
+          }}
+        >
+          <SelectTrigger className={errors['munition_nickname'] ? 'border-red-500' : ''}>
+            <SelectValue placeholder="Select a munition" />
+          </SelectTrigger>
+          <SelectContent>
+            {munitionTypes.map(mt => (
+              <SelectItem key={mt.nickname} value={mt.nickname}>{mt.nickname}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {errors['munition_nickname'] && <p className="text-sm text-red-500">{errors['munition_nickname']}</p>}
       </div>
     );
   };
@@ -221,24 +273,20 @@ export function ActionDetailsForm({ actionType, details, onChange, onValidation 
           {renderInputField('Altitude', 'alt', false, '', true)}
         </div>
       );
-    case 'vector_defense_battery':
-    case 'vector_radar':
+    case 'arm_launcher':
+    case 'arm_battery':
         return (
             <div className="grid grid-cols-2 gap-4">
-              {renderInputField('Callsign', 'callsign')}
-              <div />
-              {renderInputField('Target Latitude', 'lat', true, 'target_pos', true)}
-              {renderInputField('Target Longitude', 'lon', true, 'target_pos', true)}
-              {renderInputField('Target Altitude', 'alt', true, 'target_pos', true)}
+              {renderInputField('Launcher Callsign', 'launcher_callsign')}
+              {renderMunitionTypeDropdown()}
+              {renderInputField('Quantity', 'quantity', false, '', true)}
             </div>
           );
     case 'launch_missile':
       return (
         <div className="grid grid-cols-2 gap-4">
-          {renderPlatformTypeDropdown()}
-          {renderInputField('Missile Callsign', 'callsign')}
           {renderInputField('Launcher Callsign', 'launcher_callsign')}
-          <div />
+          {renderMunitionTypeDropdown()}
           {renderInputField('Target Latitude', 'target_lat', false, '', true)}
           {renderInputField('Target Longitude', 'target_lon', false, '', true)}
           {renderInputField('Target Altitude', 'target_alt', false, '', true)}

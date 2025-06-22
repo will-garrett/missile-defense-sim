@@ -67,22 +67,16 @@ class MessagingService:
     async def get_platforms(self) -> List[Dict[str, Any]]:
         """Get all available platform types"""
         async with self.db_pool.acquire() as con:
-            platforms = await con.fetch("""
-                SELECT id, nickname, category, description, max_speed_mps, 
-                       max_range_m, max_altitude_m, blast_radius_m, detection_range_m,
-                       sweep_rate_deg_per_sec, reload_time_sec, accuracy_percent
-                FROM platform_type
-                ORDER BY category, nickname
-            """)
+            platforms = await con.fetch("SELECT * FROM platform_type ORDER BY category, nickname")
             return [dict(p) for p in platforms]
     
     async def get_installations(self) -> List[Dict[str, Any]]:
         """Get all installations"""
         async with self.db_pool.acquire() as con:
             installations = await con.fetch("""
-                SELECT i.id, i.callsign, i.geom, i.altitude_m, i.is_mobile, 
-                       i.current_speed_mps, i.heading_deg, i.status, i.ammo_count,
-                       pt.nickname as platform_nickname, pt.category
+                SELECT i.id, i.callsign, i.geom, i.altitude_m, 
+                       i.heading_deg, i.status,
+                       pt.nickname as platform_nickname, pt.category, pt.is_mobile
                 FROM installation i
                 JOIN platform_type pt ON i.platform_type_id = pt.id
                 ORDER BY pt.category, i.callsign
@@ -90,8 +84,7 @@ class MessagingService:
             return [dict(i) for i in installations]
     
     async def create_installation(self, platform_nickname: str, callsign: str, 
-                                lat: float, lon: float, altitude_m: float = 0,
-                                is_mobile: bool = False, ammo_count: int = 0) -> Dict[str, Any]:
+                                lat: float, lon: float, altitude_m: float = 0) -> Dict[str, Any]:
         """Create a new installation"""
         async with self.db_pool.acquire() as con:
             # Get platform type ID
@@ -115,10 +108,10 @@ class MessagingService:
             # Create installation
             installation_id = await con.fetchval("""
                 INSERT INTO installation (
-                    platform_type_id, callsign, geom, altitude_m, is_mobile, ammo_count
-                ) VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5, $6, $7)
+                    platform_type_id, callsign, geom, altitude_m
+                ) VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, $5)
                 RETURNING id
-            """, platform_id, callsign, lon, lat, altitude_m, is_mobile, ammo_count)
+            """, platform_id, callsign, lon, lat, altitude_m)
             
             return {
                 "installation_id": installation_id,
@@ -163,190 +156,161 @@ class MessagingService:
                 "status": "all_deleted"
             }
     
-    async def launch_missile(self, platform_nickname: str, launch_callsign: str,
-                           launch_lat: float, launch_lon: float, launch_alt: float,
-                           target_lat: float, target_lon: float, target_alt: float,
-                           missile_type: str = "attack") -> Dict[str, Any]:
-        """Launch a missile with realistic airburst target calculation"""
-        
-        # Validate platform exists
+    async def arm_launcher(self, launcher_callsign: str, munition_nickname: str, quantity: int) -> Dict[str, Any]:
+        """Arm a launcher with a specific type of munition."""
         async with self.db_pool.acquire() as con:
-            platform = await con.fetchrow(
-                "SELECT id, category, blast_radius_m FROM platform_type WHERE nickname = $1",
-                platform_nickname
-            )
-            
-            if not platform:
-                raise ValueError(f"Platform {platform_nickname} not found")
-            
-            # Validate installation exists
-            installation = await con.fetchrow(
-                "SELECT id FROM installation WHERE callsign = $1",
-                launch_callsign
-            )
-            
-            if not installation:
-                raise ValueError(f"Installation {launch_callsign} not found")
-            
-            # Check if installation has ammo (for counter-defense systems)
-            if platform['category'] == 'counter_defense':
-                ammo = await con.fetchval(
-                    "SELECT ammo_count FROM installation WHERE callsign = $1",
-                    launch_callsign
-                )
-                
-                if ammo <= 0:
-                    raise ValueError("Installation has no ammunition")
-                
-                # Decrement ammo
+            # Get launcher and munition IDs
+            launcher_id = await con.fetchval("SELECT id FROM installation WHERE callsign = $1", launcher_callsign)
+            if not launcher_id:
+                raise ValueError(f"Launcher with callsign {launcher_callsign} not found")
+
+            munition_id = await con.fetchval("SELECT id FROM munition_type WHERE nickname = $1", munition_nickname)
+            if not munition_id:
+                raise ValueError(f"Munition with nickname {munition_nickname} not found")
+
+            # Use INSERT ... ON CONFLICT to either add new ammo or update existing count
+            await con.execute("""
+                INSERT INTO installation_munition (installation_id, munition_type_id, quantity)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (installation_id, munition_type_id)
+                DO UPDATE SET quantity = installation_munition.quantity + EXCLUDED.quantity;
+            """, launcher_id, munition_id, quantity)
+
+            return {
+                "launcher_callsign": launcher_callsign,
+                "munition_nickname": munition_nickname,
+                "status": "armed",
+                "added_quantity": quantity
+            }
+    
+    async def launch_missile(self, launcher_callsign: str, munition_nickname: str,
+                           target_lat: float, target_lon: float, target_alt: float) -> Dict[str, Any]:
+        """Launch a missile from a specific launcher."""
+        
+        async with self.db_pool.acquire() as con:
+            # Transaction to ensure atomicity
+            async with con.transaction():
+                # 1. Get launcher and munition info
+                launcher = await con.fetchrow("""
+                    SELECT 
+                        i.id, 
+                        ST_X(i.geom::geometry) as lon, 
+                        ST_Y(i.geom::geometry) as lat,
+                        i.altitude_m as alt
+                    FROM installation i WHERE callsign = $1
+                """, launcher_callsign)
+                if not launcher:
+                    raise ValueError(f"Launcher {launcher_callsign} not found")
+
+                munition_type = await con.fetchrow("SELECT id, nickname FROM munition_type WHERE nickname = $1", munition_nickname)
+                if not munition_type:
+                    raise ValueError(f"Munition type {munition_nickname} not found")
+
+                # 2. Check for available ammunition
+                ammo_record = await con.fetchrow("""
+                    SELECT id, quantity FROM installation_munition
+                    WHERE installation_id = $1 AND munition_type_id = $2
+                """, launcher['id'], munition_type['id'])
+
+                if not ammo_record or ammo_record['quantity'] < 1:
+                    raise ValueError(f"Launcher {launcher_callsign} has no {munition_nickname} ammunition")
+
+                # 3. Decrement ammo count
                 await con.execute(
-                    "UPDATE installation SET ammo_count = ammo_count - 1 WHERE callsign = $1",
-                    launch_callsign
+                    "UPDATE installation_munition SET quantity = quantity - 1 WHERE id = $1",
+                    ammo_record['id']
                 )
-        
-        # Calculate airburst target position for realistic detonation
-        blast_radius = platform.get('blast_radius_m')
-        if blast_radius is None or blast_radius <= 0:
-            print(f"WARNING: Platform {platform_nickname} has no blast radius set in database, using default 200m")
-            blast_radius = 200.0
-        else:
-            blast_radius = float(blast_radius)
-        
-        # For airburst detonation, calculate optimal detonation altitude
-        # This should be above the target but within blast radius for maximum effectiveness
-        airburst_altitude = max(target_alt + 100, blast_radius * 0.5)  # At least 100m above target or half blast radius
-        
-        # Calculate target position for airburst (same lat/lon, but higher altitude)
-        airburst_target_lat = target_lat
-        airburst_target_lon = target_lon
-        airburst_target_alt = airburst_altitude
-        
-        # Send launch request to simulation service via NATS
-        launch_message = {
-            "type": "missile_launch",
-            "platform_nickname": platform_nickname,
-            "launch_callsign": launch_callsign,
-            "launch_lat": launch_lat,
-            "launch_lon": launch_lon,
-            "launch_alt": launch_alt,
-            "target_lat": airburst_target_lat,
-            "target_lon": airburst_target_lon,
-            "target_alt": airburst_target_alt,
-            "missile_type": missile_type,
-            "blast_radius": blast_radius,
-            "timestamp": time.time()
-        }
-        
-        await self.nats_client.publish("simulation.launch", json.dumps(launch_message).encode())
-        
-        # Add to local simulation state
-        missile_id = f"{launch_callsign}_{int(time.time()*1000)}"
-        position = [launch_lon, launch_lat, launch_alt]
-        target = [airburst_target_lon, airburst_target_lat, airburst_target_alt]
-        # Simple initial velocity toward target
-        dx = airburst_target_lon - launch_lon
-        dy = airburst_target_lat - launch_lat
-        dz = airburst_target_alt - launch_alt
-        mag = math.sqrt(dx*dx + dy*dy + dz*dz)
-        if mag > 0:
-            velocity = [dx/mag*500, dy/mag*500, dz/mag*500]  # 500 m/s initial
-        else:
-            velocity = [0, 0, 500]
-        self.active_missiles[missile_id] = MissileState(missile_id, position, velocity, target, fuel_remaining=1000.0)
-        return {
-            "status": "launch_requested",
-            "platform": platform_nickname,
-            "launch_installation": launch_callsign,
-            "target": {"lat": airburst_target_lat, "lon": airburst_target_lon, "alt": airburst_target_alt},
-            "blast_radius": blast_radius,
-            "timestamp": time.time()
-        }
+
+                # 4. Generate a new missile callsign
+                fired_count = await con.fetchval("""
+                    SELECT COUNT(*) FROM active_missile WHERE launch_installation_id = $1
+                """, launcher['id'])
+                
+                munition_abbreviation = "".join([c for c in munition_type['nickname'] if c.isupper() or c.isdigit()])
+                new_missile_callsign = f"{launcher_callsign}-{munition_abbreviation}-{fired_count + 1}"
+
+                # 5. Send launch request to simulation service
+                launch_message = {
+                    "type": "missile_launch",
+                    "missile_callsign": new_missile_callsign,
+                    "munition_nickname": munition_nickname,
+                    "launch_callsign": launcher_callsign,
+                    "launch_lat": launcher['lat'],
+                    "launch_lon": launcher['lon'],
+                    "launch_alt": launcher['alt'],
+                    "target_lat": target_lat,
+                    "target_lon": target_lon,
+                    "target_alt": target_alt,
+                    "timestamp": time.time()
+                }
+                
+                if self.nats_client:
+                    await self.nats_client.publish("simulation.launch", json.dumps(launch_message).encode())
+                
+                return {
+                    "status": "launched",
+                    "missile_callsign": new_missile_callsign,
+                    "launcher_callsign": launcher_callsign,
+                    "munition_nickname": munition_nickname
+                }
     
     async def get_active_missiles(self) -> List[Dict[str, Any]]:
         """Get all active missiles"""
         async with self.db_pool.acquire() as con:
             missiles = await con.fetch("""
-                SELECT am.id, am.callsign, am.missile_type, am.launch_ts,
-                       am.current_geom, am.current_altitude_m,
-                       am.velocity_x_mps, am.velocity_y_mps, am.velocity_z_mps,
-                       am.fuel_remaining_kg, am.status,
-                       pt.nickname as platform_nickname
+                SELECT 
+                    am.id as callsign,
+                    mt.nickname as munition_type,
+                    am.status,
+                    am.current_geom,
+                    am.current_altitude_m,
+                    am.launch_ts
                 FROM active_missile am
-                JOIN platform_type pt ON am.platform_type_id = pt.id
+                JOIN munition_type mt ON am.munition_type_id = mt.id
                 WHERE am.status = 'active'
-                ORDER BY am.launch_ts DESC
             """)
             return [dict(m) for m in missiles]
     
     async def get_recent_detections(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent detection events"""
-        async with self.db_pool.acquire() as con:
-            detections = await con.fetch("""
-                SELECT de.id, de.detection_ts, de.detection_geom, de.detection_altitude_m,
-                       de.signal_strength_db, de.confidence_percent,
-                       i.callsign as radar_callsign,
-                       am.callsign as missile_callsign
-                FROM detection_event de
-                JOIN installation i ON de.detection_installation_id = i.id
-                JOIN active_missile am ON de.detected_missile_id = am.id
-                ORDER BY de.detection_ts DESC
-                LIMIT $1
-            """, limit)
-            return [dict(d) for d in detections]
+        # This will need to be updated in a later step, as the detection_event table was removed
+        return []
     
     async def get_recent_engagements(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent engagement events"""
-        async with self.db_pool.acquire() as con:
-            engagements = await con.fetch("""
-                SELECT e.id, e.intercept_geom, e.intercept_altitude_m, e.status,
-                       e.intercept_distance_m, e.created_at,
-                       i.callsign as battery_callsign
-                FROM engagement e
-                JOIN installation i ON e.launch_installation_id = i.id
-                ORDER BY e.created_at DESC
-                LIMIT $1
-            """, limit)
-            return [dict(e) for e in engagements]
+        # This will need to be updated in a later step, as the engagement table was removed
+        return []
     
     async def get_recent_detonations(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent detonation events"""
-        async with self.db_pool.acquire() as con:
-            detonations = await con.fetch("""
-                SELECT de.id, de.detonation_geom, de.detonation_altitude_m,
-                       de.blast_radius_m, de.created_at,
-                       am.callsign as missile_callsign
-                FROM detonation_event de
-                JOIN active_missile am ON de.missile_id = am.id
-                ORDER BY de.created_at DESC
-                LIMIT $1
-            """, limit)
-            return [dict(d) for d in detonations]
+        # This will need to be updated in a later step, as the detonation_event table was removed
+        return []
     
     async def health_check(self) -> Dict[str, Any]:
-        """Health check"""
+        """Health check endpoint"""
+        db_ok = False
+        nats_ok = False
+        
+        # Check DB
         try:
-            # Check database
             async with self.db_pool.acquire() as con:
                 await con.fetchval("SELECT 1")
-            
-            # Check NATS
-            if self.nats_client and self.nats_client.is_connected:
-                nats_status = "connected"
-            else:
-                nats_status = "disconnected"
-            
-            return {
-                "status": "healthy",
-                "database": "connected",
-                "nats": nats_status,
-                "timestamp": time.time()
-            }
+            db_ok = True
         except Exception as e:
-            return {
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": time.time()
+            print(f"Health check DB error: {e}")
+        
+        # Check NATS
+        if self.nats_client and self.nats_client.is_connected:
+            nats_ok = True
+            
+        return {
+            "service": "attack_service",
+            "status": "ok" if db_ok and nats_ok else "degraded",
+            "dependencies": {
+                "database": "ok" if db_ok else "error",
+                "nats": "ok" if nats_ok else "error"
             }
+        }
 
     async def simulate_missiles_loop(self):
         while True:

@@ -58,7 +58,7 @@ export function ActionAccordionItem({
     if (parseFloat(timeStr) !== action.time_from_start_seconds) {
       setTimeStr(action.time_from_start_seconds.toString());
     }
-  }, [action.time_from_start_seconds]);
+  }, [action.time_from_start_seconds, timeStr]);
 
   const handleValidation = useCallback((isValid: boolean) => {
     onActionValidation(index, isValid);
