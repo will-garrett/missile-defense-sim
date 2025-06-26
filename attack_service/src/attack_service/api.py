@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from prometheus_client import Counter
 
-from messaging import MessagingService
+from .messaging import MessagingService
 
 # Prometheus metrics
 LAUNCHES = Counter("missile_launches", "Total missiles launched")

@@ -7,8 +7,8 @@ import asyncio
 from prometheus_client import start_http_server
 import uvicorn
 
-from api import AttackServiceAPI
-from messaging import MessagingService
+from .api import AttackServiceAPI
+from .messaging import MessagingService
 
 # Start Prometheus metrics server
 start_http_server(8000)
